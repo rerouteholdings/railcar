@@ -352,13 +352,24 @@ func (b *Backend) uiChat(eng *chat.Engine, c chat.Chat) ui.Chat {
 	}
 	if c.Kind == chat.KindGroup {
 		out.Kind = ui.GroupChat
+		out.Topic, out.Admin = c.Topic, slices.Contains(c.Admins, me)
+		for _, r := range c.Requests {
+			out.Requests = append(out.Requests, ui.AddRequest{ID: r.ID, From: member(eng, r.From), Who: member(eng, r.Who)})
+		}
+	}
+	if c.Kind == chat.KindChannel {
+		return channelChat(eng, c, out)
 	}
 	for _, id := range c.Members {
 		if id != me {
-			out.Members = append(out.Members, member(eng, id))
+			m := member(eng, id)
+			m.Admin = slices.Contains(c.Admins, id)
+			out.Members = append(out.Members, m)
 		}
 	}
-	if c.Peer != "" {
+	if c.Kind == chat.KindGroup && c.Name != "" {
+		out.Title = c.Name
+	} else if c.Peer != "" {
 		out.Title = "@" + eng.Handle(c.Peer)
 	} else {
 		names := make([]string, 0, len(out.Members))
@@ -378,7 +389,7 @@ func uiMessage(eng *chat.Engine, me, chatID string, m chat.Message) ui.Message {
 	out := ui.Message{
 		ID: m.ID, Chat: chatID, Sender: member(eng, m.From), Mine: m.From == me,
 		Sent: time.Unix(m.TS, 0), Text: m.Body, ReplyTo: m.Reply, Edited: m.Edited,
-		Deleted: m.Deleted, Unsupported: m.Unsupported != "", Read: len(m.ReadBy) > 0, System: m.System,
+		Deleted: m.Deleted, Unsupported: m.Unsupported != "", Read: len(m.ReadBy) > 0, System: m.System, Seq: m.Seq,
 	}
 	switch m.Status {
 	case chat.Sending:

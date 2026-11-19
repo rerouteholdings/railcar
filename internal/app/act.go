@@ -1,0 +1,264 @@
+package app
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"strconv"
+	"strings"
+	"time"
+
+	"github.com/rerouteholdings/railcar/internal/chat"
+	"github.com/rerouteholdings/railcar/internal/tieroute/community"
+	"github.com/rerouteholdings/railcar/internal/ui"
+)
+
+// channelChat fills in a community channel as the interface shows it.
+func channelChat(eng *chat.Engine, c chat.Chat, out ui.Chat) ui.Chat {
+	out.Kind = ui.ChannelChat
+	if c.Voice {
+		out.Kind = ui.VoiceChannel
+	}
+	out.Title = c.Name
+	if out.Title == "" {
+		out.Title = "Channel " + strconv.FormatUint(c.Channel, 10) + " (name not readable yet)"
+	}
+	out.Topic, out.Community, out.CommunityServer, out.Order = c.Topic, c.CommunityName, c.Community, c.Order
+	v, _ := eng.Community(c.Community)
+	me := eng.Client().ID()
+	for _, id := range c.Members {
+		if id == me {
+			continue
+		}
+		m := member(eng, id)
+		m.Roles = strings.Join(v.Members[id], ", ")
+		out.Members = append(out.Members, m)
+	}
+	for _, id := range c.InVoice {
+		out.InVoice = append(out.InVoice, member(eng, id))
+	}
+	out.Admin = v.Can(community.PermAdministrate)
+	return out
+}
+
+// Contacts implements ui.Backend.
+func (b *Backend) Contacts(context.Context) ([]ui.Member, error) {
+	eng, err := b.engine()
+	if err != nil {
+		return nil, err
+	}
+	var out []ui.Member
+	for _, c := range eng.Contacts() {
+		if c.State == chat.StateContact {
+			out = append(out, ui.Member{Handle: c.Handle})
+		}
+	}
+	return out, nil
+}
+
+// idOf finds an identity by handle among the contacts and the chats'
+// members.
+func idOf(eng *chat.Engine, handle string) (string, error) {
+	h := strings.TrimPrefix(strings.TrimSpace(handle), "@")
+	for _, c := range eng.Contacts() {
+		if c.Handle == h {
+			return c.ID, nil
+		}
+	}
+	for _, ch := range eng.Chats() {
+		for _, id := range ch.Members {
+			if eng.Handle(id) == h {
+				return id, nil
+			}
+		}
+	}
+	for _, s := range eng.Communities() {
+		v, _ := eng.Community(s)
+		for id := range v.Members {
+			if eng.Handle(id) == h {
+				return id, nil
+			}
+		}
+	}
+	return "", fmt.Errorf("Railcar doesn't know @%s", h)
+}
+
+// CreateGroup implements ui.Backend.
+func (b *Backend) CreateGroup(ctx context.Context, name string, handles []string) (string, error) {
+	eng, err := b.engine()
+	if err != nil {
+		return "", err
+	}
+	var ids []string
+	for _, h := range handles {
+		id, err := idOf(eng, h)
+		if err != nil {
+			return "", err
+		}
+		ids = append(ids, id)
+	}
+	c, err := eng.CreateGroup(ctx, name, ids)
+	var miss *chat.MissingError
+	if errors.As(err, &miss) {
+		return c.ID, nil
+	}
+	return c.ID, friendly(err)
+}
+
+// Act implements ui.Backend.
+func (b *Backend) Act(ctx context.Context, chatID string, a ui.Action) (string, error) {
+	eng, err := b.engine()
+	if err != nil {
+		return "", err
+	}
+	msg, err := act(ctx, eng, chatID, a)
+	return msg, friendly(err)
+}
+
+func act(ctx context.Context, eng *chat.Engine, chatID string, a ui.Action) (string, error) {
+	c, _ := eng.Chat(chatID)
+	server := c.Community
+	who := func() (string, error) {
+		if a.Arg == "" {
+			return "", errors.New("name someone, as @handle")
+		}
+		return idOf(eng, a.Arg)
+	}
+	needCommunity := func() error {
+		if server == "" {
+			return errors.New("open a channel of the community first")
+		}
+		return nil
+	}
+	switch a.Kind {
+	case "add-member":
+		id, err := who()
+		if err != nil {
+			return "", err
+		}
+		added, err := eng.AddMember(ctx, chatID, id)
+		if err != nil {
+			return "", err
+		}
+		if !added {
+			return "You asked the admins to add " + a.Arg, nil
+		}
+		return "Added " + a.Arg, nil
+	case "remove-member":
+		id, err := who()
+		if err != nil {
+			return "", err
+		}
+		return "Removed " + a.Arg, eng.RemoveMember(ctx, chatID, id)
+	case "make-admin", "revoke-admin":
+		id, err := who()
+		if err != nil {
+			return "", err
+		}
+		on := a.Kind == "make-admin"
+		if err := eng.SetAdmin(ctx, chatID, id, on); err != nil {
+			return "", err
+		}
+		if on {
+			return a.Arg + " is an admin now", nil
+		}
+		return a.Arg + " is no longer an admin", nil
+	case "approve-add", "decline-add":
+		req := a.Arg
+		if req == "" {
+			if len(c.Requests) == 0 {
+				return "", errors.New("there's no add-request to answer")
+			}
+			req = c.Requests[0].ID
+		}
+		approve := a.Kind == "approve-add"
+		if err := eng.AnswerAdd(ctx, chatID, req, approve); err != nil {
+			return "", err
+		}
+		if approve {
+			return "Approved. The member who asked adds them now", nil
+		}
+		return "Declined", nil
+	case "leave":
+		return "You left the group", eng.Leave(ctx, chatID)
+	case "rename":
+		return "Renamed", eng.SetGroupMeta(ctx, chatID, &a.Arg, nil)
+	case "topic":
+		return "Topic changed", eng.SetGroupMeta(ctx, chatID, nil, &a.Arg)
+	case "create-community":
+		if _, err := eng.CreateCommunity(ctx, strings.TrimSpace(a.Arg), a.Arg2, "", strings.TrimSpace(a.Arg3)); err != nil {
+			return "", err
+		}
+		return "Created " + a.Arg2 + " on " + a.Arg, nil
+	case "join-community":
+		s, err := eng.JoinCommunity(ctx, a.Arg)
+		if err != nil {
+			return "", err
+		}
+		v, _ := eng.Community(s)
+		msg := "Joined " + v.Name + ". Channel names and history arrive once a member's app sends the keys"
+		if v.Public {
+			msg += ". Anyone with a code can join this community and read it, so its encryption protects against the community server, not against members"
+		}
+		return msg, nil
+	}
+	if err := needCommunity(); err != nil {
+		return "", err
+	}
+	switch a.Kind {
+	case "make-code":
+		return eng.MakeCode(ctx, server, 7, 25)
+	case "add-channel", "add-voice-channel":
+		_, err := eng.AddChannel(ctx, server, a.Arg, "", chat.ChannelOptions{Voice: a.Kind == "add-voice-channel"})
+		return "Added #" + a.Arg, err
+	case "add-role":
+		perms := strings.Fields(a.Arg2)
+		if len(perms) == 0 {
+			perms = []string{community.PermTalk}
+		}
+		_, err := eng.AddRole(ctx, server, a.Arg, "", perms)
+		return "Added the role " + a.Arg, err
+	case "give-role":
+		id, err := who()
+		if err != nil {
+			return "", err
+		}
+		v, _ := eng.Community(server)
+		role, ok := v.RoleByName(a.Arg2)
+		if !ok {
+			return "", fmt.Errorf("there's no role called %s", a.Arg2)
+		}
+		return "Gave " + a.Arg + " the role " + a.Arg2, eng.SetRoles(ctx, server, id, []uint64{role})
+	case "history":
+		r, err := eng.FetchHistory(ctx, chatID)
+		if err != nil {
+			return "", err
+		}
+		if len(r.Gaps) > 0 {
+			return fmt.Sprintf("Read %d messages from history. Some are still missing; Railcar asked the members for them", r.Added), nil
+		}
+		return fmt.Sprintf("Read %d messages from history", r.Added), nil
+	case "kick", "ban":
+		id, err := who()
+		if err != nil {
+			return "", err
+		}
+		if a.Kind == "kick" {
+			return "Kicked " + a.Arg, eng.Kick(ctx, server, id)
+		}
+		return "Banned " + a.Arg, eng.Ban(ctx, server, id)
+	case "timeout":
+		id, err := who()
+		if err != nil {
+			return "", err
+		}
+		mins, err := strconv.Atoi(strings.TrimSpace(a.Arg2))
+		if err != nil || mins < 0 || mins > 7*24*60 {
+			mins = 10
+		}
+		return fmt.Sprintf("Timed out %s for %d minutes", a.Arg, mins), eng.Timeout(ctx, server, id, time.Duration(mins)*time.Minute)
+	case "leave-community":
+		return "You left the community", eng.LeaveCommunity(ctx, server)
+	}
+	return "", fmt.Errorf("Railcar doesn't know the action %q", a.Kind)
+}
