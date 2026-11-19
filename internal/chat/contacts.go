@@ -239,7 +239,13 @@ func (e *Engine) fetchChain(ctx context.Context, id string, fresh bool) (*identi
 			return c, nil
 		}
 	}
-	c, err := e.c.FetchChain(ctx, id, client.FetchOptions{Fresh: fresh && id != e.c.ID()})
+	opts := client.FetchOptions{Fresh: fresh && id != e.c.ID()}
+	if c, _ := e.c.CachedChain(id); c == nil {
+		// Someone this device has no chain for, such as a group member
+		// who isn't a contact: their home, as a group's basis names it.
+		opts.Home = e.homes[id]
+	}
+	c, err := e.c.FetchChain(ctx, id, opts)
 	var w *client.ChainWarning
 	if errors.As(err, &w) {
 		return nil, err
@@ -251,4 +257,36 @@ func (e *Engine) fetchChain(ctx context.Context, id string, fresh bool) (*identi
 		e.st.Handles[id] = c.State.Handle
 	}
 	return c, err
+}
+
+// noteHomes keeps where each identity a group binds lives, from the newest
+// set-home in its basis tail, for fetching the chains of members who
+// aren't contacts. ids are the group's members: for one the basis doesn't
+// place, the group's hub is the guess, since it's the creator's home
+// (§11.5). A hint is only where to ask: the chain that comes back is
+// checked as any other.
+func (e *Engine) noteHomes(ext *GroupExt, ids ...string) {
+	for _, id := range ids {
+		if _, ok := e.homes[id]; !ok && ext.Hub != "" {
+			e.homes[id] = ext.Hub
+		}
+	}
+	for id, br := range ext.Basis {
+		for _, s := range br.Tail {
+			var body struct {
+				Ops []struct {
+					Op   string `json:"op"`
+					Home string `json:"home"`
+				} `json:"ops"`
+			}
+			if s.Body(&body) != nil {
+				continue
+			}
+			for _, op := range body.Ops {
+				if op.Op == identity.OpSetHome && op.Home != "" {
+					e.homes[id] = op.Home
+				}
+			}
+		}
+	}
 }

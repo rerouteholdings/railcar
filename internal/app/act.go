@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -213,6 +214,50 @@ func act(ctx context.Context, eng *chat.Engine, chatID string, a ui.Action) (str
 		return "Renamed", eng.SetGroupMeta(ctx, chatID, &a.Arg, nil)
 	case "topic":
 		return "Topic changed", eng.SetGroupMeta(ctx, chatID, nil, &a.Arg)
+	case "move-hub":
+		if err := eng.MoveHub(ctx, chatID); err != nil {
+			return "", err
+		}
+		return "The group's hub is your homeserver now", nil
+	case "recreate":
+		_, err := eng.RecreateGroup(ctx, chatID)
+		var miss *chat.MissingError
+		if err != nil && !errors.As(err, &miss) {
+			return "", err
+		}
+		msg := "Re-created the group. Its history came along"
+		if miss != nil {
+			msg += ". Left out, with no key package: " + strings.Join(miss.People, ", ")
+		}
+		return msg, nil
+	case "switch":
+		if err := eng.SwitchGroup(ctx, chatID); err != nil {
+			return "", err
+		}
+		return "Switched. This group carries on the chat", nil
+	case "group-picture":
+		path := strings.TrimSpace(a.Arg)
+		if path == "" {
+			return "", errors.New("name a picture, as :group-picture ~/Pictures/trail.png, or none")
+		}
+		if strings.EqualFold(path, "none") {
+			return "Removed the group's picture", eng.SetGroupPicture(ctx, chatID, nil)
+		}
+		data, err := os.ReadFile(expandHome(path))
+		if err != nil {
+			return "", fmt.Errorf("Railcar can't read %s", path)
+		}
+		return "Changed the group's picture", eng.SetGroupPicture(ctx, chatID, data)
+	case "save-picture":
+		dir := downloads()
+		if d := strings.TrimSpace(a.Arg); d != "" {
+			dir = expandHome(d)
+		}
+		path, err := eng.SaveGroupPicture(chatID, dir)
+		if err != nil {
+			return "", err
+		}
+		return "Saved the group's picture to " + path, nil
 	case "create-community":
 		if _, err := eng.CreateCommunity(ctx, strings.TrimSpace(a.Arg), a.Arg2, "", strings.TrimSpace(a.Arg3)); err != nil {
 			return "", err

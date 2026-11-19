@@ -214,7 +214,7 @@ func mustB64(s string) []byte {
 // has the hub sequence it with a commit-request (§11.6), and applies it
 // once accepted. Welcomes go in the same submission. The caller holds
 // e.mu.
-func (e *Engine) commit(ctx context.Context, ch *Chat, g *mls.Group, opts mls.CommitOptions, next *GroupExt, to, welcomeTo []string) error {
+func (e *Engine) commit(ctx context.Context, ch *Chat, g *mls.Group, opts mls.CommitOptions, next *GroupExt, to, welcomeTo []string, before ...beforeSend) error {
 	if ch.Stopped != "" || ch.Pending {
 		return errors.New("chat: this chat can't change until its last commit is decided")
 	}
@@ -250,6 +250,13 @@ func (e *Engine) commit(ctx context.Context, ch *Chat, g *mls.Group, opts mls.Co
 	// Keep the pending commit across a crash before the answer.
 	if err := e.dev.Save(); err != nil {
 		return err
+	}
+	for _, f := range before {
+		if err := f(res.Epoch+1, nextKey.Public()); err != nil {
+			g.ClearPendingCommit()
+			e.dev.Save()
+			return err
+		}
 	}
 	epoch := res.Epoch
 	out := client.Outgoing{
@@ -314,6 +321,12 @@ func (ch *Chat) applied(epoch uint64, hash []byte) {
 		}
 	}
 }
+
+// beforeSend runs after a commit is made and before it's sent, with the
+// epoch the commit creates and that epoch's key; an error drops the
+// commit. A hub handoff registers the group with the new hub there
+// (§11.11).
+type beforeSend func(epoch uint64, epochKey []byte) error
 
 // checkReceipt checks a hub's commit receipt (§11.6): signed by the hub
 // named in tieroute_group, for this group, epoch, and commit.
@@ -386,6 +399,13 @@ func (e *Engine) welcome(ctx context.Context, d *client.Delivery) error {
 	// Check every leaf on this device's own fresh copies (§7.1, Welcomes):
 	// every leaf is a device its identity's chain added at some point, and
 	// the sender's is a current device.
+	var all []string
+	for i := range st.Members {
+		if id, _, err := parseCredential(st.Members[i].Identity); err == nil {
+			all = append(all, id)
+		}
+	}
+	e.noteHomes(ext, all...)
 	get := e.chainGetter(ctx, true)
 	ids := map[string]bool{}
 	for i := range st.Members {
@@ -452,9 +472,8 @@ func (e *Engine) welcome(ctx context.Context, d *client.Delivery) error {
 // joinGroup finishes joining a group chat from a checked Welcome: at most
 // 25 people and 250 leaves (§11.10), admins who are members, and since
 // covering exactly the members (§11.8). A Welcome whose tieroute_group
-// names a group it replaces starts a separate chat: linking it to the old
-// one waits for a later version of Railcar (§11.11). The caller holds
-// e.mu.
+// names a group it replaces is offered as its re-creation (§11.11). The
+// caller holds e.mu.
 func (e *Engine) joinGroup(ctx context.Context, g *mls.Group, d *client.Delivery, st *mls.State, ext *GroupExt, ids map[string]bool) error {
 	refuse := func(err error) error {
 		g.Delete()
@@ -501,6 +520,7 @@ func (e *Engine) joinGroup(ctx context.Context, g *mls.Group, d *client.Delivery
 	} else {
 		e.systemLine(ch, e.nameOf(d.From)+" added you")
 	}
+	e.offerReplacement(ch, ext, d.From)
 	e.applyImported(ctx, ch)
 	e.emit(Event{Kind: EventChat, Chat: ptr(ch.public())})
 	if err := e.topUp(ctx); err != nil {

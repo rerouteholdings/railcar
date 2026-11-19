@@ -371,6 +371,7 @@ func (b *Backend) uiChat(eng *chat.Engine, c chat.Chat) ui.Chat {
 	}
 	if c.Kind == chat.KindGroup {
 		out.Kind = ui.GroupChat
+		out.Picture = c.Picture
 		out.Topic, out.Admin = c.Topic, slices.Contains(c.Admins, me)
 		for _, r := range c.Requests {
 			out.Requests = append(out.Requests, ui.AddRequest{ID: r.ID, From: member(eng, r.From), Who: member(eng, r.Who)})

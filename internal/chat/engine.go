@@ -102,8 +102,11 @@ type Engine struct {
 	// joinCode is the code a join is using, by community server, for
 	// code access before this identity is a member.
 	joinCode map[string][]byte
-	crunMu   sync.Mutex
-	cruns    map[string]bool
+	// homes are hints of where identities this device has no chain for
+	// live, from the chain tails groups bind, for GET chain's home.
+	homes  map[string]string
+	crunMu sync.Mutex
+	cruns  map[string]bool
 
 	// ppl holds presence and public profiles (§13).
 	ppl people
@@ -142,6 +145,7 @@ func New(c *client.Client, opts Options) (*Engine, error) {
 		cchains:  map[string]*community.Chain{},
 		cruns:    map[string]bool{},
 		joinCode: map[string][]byte{},
+		homes:    map[string]string{},
 		events:   make(chan Event, 256),
 	}
 	e.loadPeople()

@@ -167,7 +167,9 @@ type Backend interface {
 //   - Group chats (§11.7, §11.8, §12): add-member, remove-member,
 //     make-admin, revoke-admin (Arg: a handle), approve-add, decline-add
 //     (Arg: a request ID, or empty for the oldest), leave, rename and
-//     topic (Arg: the text).
+//     topic (Arg: the text), group-picture (Arg: a path, or none),
+//     save-picture (Arg: a folder, or empty for the default), move-hub,
+//     recreate, and switch, which accepts a re-created group (§11.11).
 //   - Communities (§16): create-community (Arg: the community server,
 //     Arg2: the name, Arg3: the creation code), join-community (Arg: a
 //     code), make-code, add-channel and add-voice-channel (Arg: the
@@ -395,6 +397,8 @@ type Chat struct {
 	// otherwise. ReadReceipts is "on" or "off" once they have (§13.3).
 	ReceiptAsk   *Member
 	ReadReceipts string
+	// Picture says whether a group chat has a picture (§12).
+	Picture bool
 }
 
 // IsRequest reports whether the entry is a contact request, not a chat.

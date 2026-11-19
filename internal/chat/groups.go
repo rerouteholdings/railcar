@@ -229,6 +229,14 @@ func (e *Engine) claimFor(ctx context.Context, id string, chain *identity.Chain)
 // group-meta with its name (§12). People none of whose devices has a key
 // package are left out, and come back as an error beside the chat.
 func (e *Engine) CreateGroup(ctx context.Context, name string, people []string) (Chat, error) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	return e.createGroup(ctx, name, people, "")
+}
+
+// createGroup creates a group chat; replaces names the group it
+// re-creates, if any (§11.11). The caller holds e.mu.
+func (e *Engine) createGroup(ctx context.Context, name string, people []string, replaces string) (Chat, error) {
 	name = strings.TrimSpace(name)
 	if name == "" || utf8.RuneCountInString(name) > MaxGroupName {
 		return Chat{}, errors.New("chat: a group needs a name of 1 to 100 characters")
@@ -240,8 +248,6 @@ func (e *Engine) CreateGroup(ctx context.Context, name string, people []string) 
 	if len(people)+1 > MaxGroupPeople {
 		return Chat{}, errors.New("chat: a group chat has at most 25 people")
 	}
-	e.mu.Lock()
-	defer e.mu.Unlock()
 	me := e.c.ID()
 	for _, id := range people {
 		c := e.st.Contacts[id]
@@ -275,7 +281,11 @@ func (e *Engine) CreateGroup(ctx context.Context, name string, people []string) 
 	}
 
 	// Create and register the group, with a new ID if it's taken (§11.5).
-	g, gid, err := e.newGroup(ctx, KindGroup, &GroupExt{Kind: KindGroup, Hub: e.c.Server(), Admins: []string{me}, Since: map[string]uint64{me: 0}})
+	ext := &GroupExt{Kind: KindGroup, Hub: e.c.Server(), Admins: []string{me}, Since: map[string]uint64{me: 0}}
+	if replaces != "" {
+		ext.Replaces = mustB64(replaces)
+	}
+	g, gid, err := e.newGroup(ctx, KindGroup, ext)
 	if err != nil {
 		return Chat{}, err
 	}
@@ -867,6 +877,13 @@ func (e *Engine) sendMeta(ctx context.Context, ch *Chat) error {
 	if topic != "" {
 		m.Topic = &topic
 	}
+	if ch.Picture {
+		m.Avatar = e.metaPicture(ch)
+	} else if ch.PictureRemoved {
+		// Only a removal says null: a member who hasn't seen another's
+		// picture yet leaves it out, so it doesn't clear it.
+		m.Avatar = []byte("null")
+	}
 	return e.sendContent(ctx, ch, m, false)
 }
 
@@ -892,7 +909,24 @@ func (e *Engine) applyGroupMeta(ch *Chat, from string, m GroupMeta) error {
 		e.systemLine(ch, who+" changed the topic")
 	}
 	if len(m.Avatar) > 0 {
-		ch.Picture = string(m.Avatar) != "null"
+		var pic *GroupPicture
+		if string(m.Avatar) != "null" {
+			var p GroupPicture
+			if err := wire.Unmarshal(m.Avatar, &p); err != nil || checkGroupPicture(p) != nil {
+				return errors.New("chat: a group picture that isn't a PNG, JPEG, WebP, or GIF of at most 256 KiB")
+			}
+			pic = &p
+		}
+		old, had := e.groupPicture(ch.ID)
+		changed := had != (pic != nil) || pic != nil && !bytes.Equal(old.Data, pic.Data)
+		if err := e.keepGroupPicture(ch, pic); err != nil {
+			return err
+		}
+		if changed && pic != nil {
+			e.systemLine(ch, who+" changed the group's picture")
+		} else if changed {
+			e.systemLine(ch, who+" removed the group's picture")
+		}
 	}
 	if err := e.save(); err != nil {
 		return err

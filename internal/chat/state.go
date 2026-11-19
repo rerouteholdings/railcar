@@ -53,6 +53,12 @@ type Chat struct {
 	Name    string `json:"name,omitempty"`
 	Topic   string `json:"topic,omitempty"`
 	Picture bool   `json:"picture,omitempty"`
+	// Replaces is a group chat this one re-creates, offered until the
+	// user switches (§11.11).
+	Replaces string `json:"replaces,omitempty"`
+	// PictureRemoved is set only while a group-meta that removes the
+	// picture goes out.
+	PictureRemoved bool `json:"-"`
 	// Requests are add-requests in a group chat that no admin has
 	// answered yet (§11.8).
 	Requests []AddPending `json:"requests,omitempty"`

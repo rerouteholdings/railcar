@@ -301,6 +301,7 @@ func (e *Engine) judgeCommit(ctx context.Context, ch *Chat, before *mls.State, p
 	} else {
 		return bad("the commit drops tieroute_group")
 	}
+	e.noteHomes(next)
 	if next.Kind != old.Kind {
 		return bad("the commit changes the group's kind")
 	}

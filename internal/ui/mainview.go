@@ -1282,6 +1282,11 @@ func (m *mainView) detailsView(a *App, w int) string {
 		line(t.dim.Render("Topic"))
 		b.WriteString(t.text.Width(w-1).PaddingLeft(1).Render(c.Topic) + "\n")
 	}
+	if c.Kind == GroupChat && c.Picture {
+		// A terminal can't show the picture well, so the pane says it has
+		// one, and :save-picture saves it.
+		line(t.muted.Render("The group has a picture"))
+	}
 	b.WriteString("\n")
 	if c.Kind == DirectChat && len(c.Members) == 1 {
 		profileBlock(&b, t, c.Members[0], w)
