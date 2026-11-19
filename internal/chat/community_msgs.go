@@ -1437,6 +1437,9 @@ func (e *Engine) Kick(ctx context.Context, server, member string) error {
 		}
 	}
 	e.removeEverywhere(ctx, cm, member)
+	if err := e.rotateMetaKey(ctx, cm); err != nil {
+		e.log.Info("chat: rotating the community metadata key", "err", err)
+	}
 	return nil
 }
 
@@ -1458,6 +1461,9 @@ func (e *Engine) Ban(ctx context.Context, server, member string) error {
 		return err
 	}
 	e.removeEverywhere(ctx, cm, member)
+	if err := e.rotateMetaKey(ctx, cm); err != nil {
+		e.log.Info("chat: rotating the community metadata key", "err", err)
+	}
 	return nil
 }
 

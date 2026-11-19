@@ -1,6 +1,7 @@
 package chat
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -330,6 +331,13 @@ func TestE2ERailcarCommunities(t *testing.T) {
 	all()
 	if !slices.Contains(ravi.bodies(gen.ID), "6:after the kick") {
 		t.Fatalf("ravi after the kick: %v", ravi.bodies(gen.ID))
+	}
+	// The kick rotated the metadata key, and Ravi got the new one (§16.2.4).
+	if k, r := kat.e.st.Communities["c.test"].MetaKeys, ravi.e.st.Communities["c.test"].MetaKeys; len(k) < 2 || len(r) == 0 || !bytes.Equal(k[0], r[0]) {
+		t.Fatalf("the metadata keys after the kick: kat %d, ravi %d", len(k), len(r))
+	}
+	if ravi.channel("c.test", "general").ID != gen.ID {
+		t.Fatal("ravi lost #general's name")
 	}
 
 	// Typing in a channel reaches a member on the live stream, and isn't

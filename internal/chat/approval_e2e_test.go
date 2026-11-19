@@ -125,4 +125,25 @@ func TestE2EInteropApprovalJoins(t *testing.T) {
 	if c, _ := lee.e.Community("d.test"); c.Stopped != "" {
 		t.Fatalf("lee refused the approval commit: %s", c.Stopped)
 	}
+
+	// Ravi kicks Lee and rotates the metadata key (§16.2.4): Reroute gets
+	// the new key and still reads the channel's name.
+	before := len(ravi.e.st.Communities["d.test"].MetaKeys)
+	if err := ravi.e.Kick(ctx, "d.test", lee.e.c.ID()); err != nil {
+		t.Fatal(err)
+	}
+	if n := len(ravi.e.st.Communities["d.test"].MetaKeys); n != before+1 {
+		t.Fatalf("the metadata keys after the kick: %d, then %d", before, n)
+	}
+	var after struct {
+		NamesReady bool `json:"names_ready"`
+		Channels   []struct {
+			Name string `json:"name"`
+		} `json:"channels"`
+	}
+	until(t, "max reads the names under the new key", func() bool {
+		max.run("community", "sync")
+		max.community("community", `{"server":"d.test"}`, &after)
+		return after.NamesReady && len(after.Channels) > 0 && after.Channels[0].Name == "general"
+	})
 }
