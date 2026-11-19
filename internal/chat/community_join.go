@@ -83,7 +83,7 @@ func (e *Engine) CreateCommunity(ctx context.Context, server, name, desc, creati
 		return "", err
 	}
 	op := map[string]any{"op": community.OpCreate, "server": server, "name": name, "public": false, "approval": false,
-		"everyone": []string{community.PermTalk, community.PermInvite}}
+		"everyone": []string{community.PermTalk}} // talk alone by default (§16.2.3)
 	if desc = strings.TrimSpace(desc); desc != "" {
 		op["desc"] = desc
 	}

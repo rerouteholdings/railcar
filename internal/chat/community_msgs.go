@@ -252,7 +252,9 @@ func addGroupKey(cm *Community, gid string, k []byte) {
 // adds every device of every member whose roles see it (§16.5).
 func (e *Engine) newRestrictedGroup(ctx context.Context, cm *Community, see []uint64, key []byte) (*CGroup, error) {
 	conn := e.c.Community(cm.Server)
-	exts := []mls.Extension{mustExt(communityExt(cm.Server)), mls.RequiredCapabilities([]uint16{ExtGroup}, nil, nil)}
+	// An unpinned restricted group requires 0xF0A1 and 0xF0A3 from
+	// creation on (§16.5).
+	exts := []mls.Extension{mustExt(communityExt(cm.Server)), mls.RequiredCapabilities([]uint16{ExtGroup, ExtCommunityHead}, nil, nil)}
 	mg, reg, err := e.newCommunityGroup(ctx, conn, exts)
 	if err != nil {
 		return nil, err

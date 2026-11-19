@@ -297,7 +297,9 @@ func (e *Engine) CreateGroup(ctx context.Context, name string, people []string) 
 		return Chat{}, err
 	}
 	ch := &Chat{ID: wire.EncodeB64(gid), Kind: KindGroup, Hub: e.c.Server(), Members: []string{me}, Admins: []string{me}, Epoch: st.Epoch, Name: name}
-	to := slices.Sorted(maps.Keys(after))
+	// Before the creating commit, the group is this identity alone; the
+	// rest get only the Welcome (§10.2).
+	to := []string{me}
 	if err := e.commit(ctx, ch, g, mls.CommitOptions{Adds: adds}, next, to, welcomeTo); err != nil {
 		g.Delete()
 		e.dev.Save()
@@ -482,7 +484,9 @@ func (e *Engine) commitAdd(ctx context.Context, ch *Chat, id string, approval *w
 	if err := bindFor(old, next, scope, after, chains); err != nil {
 		return err
 	}
-	to := slices.Sorted(maps.Keys(after))
+	// The commit goes to the members before it; the new person gets
+	// only the Welcome (§10.2).
+	to := slices.Sorted(slices.Values(ch.Members))
 	if err := e.commit(ctx, ch, g, mls.CommitOptions{Adds: kps}, next, to, []string{id}); err != nil {
 		return err
 	}

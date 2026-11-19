@@ -149,7 +149,7 @@ func (e *Engine) createDirect(ctx context.Context, peer string) (*Chat, error) {
 	next.Basis = map[string]BasisRef{me: basisFor(myChain), peer: basisFor(peerChain)}
 	next.Heads = map[string]ChainRef{me: next.Basis[me].Ref(), peer: next.Basis[peer].Ref()}
 	ch := &Chat{ID: wire.EncodeB64(gid), Kind: KindDirect, Hub: e.c.Server(), Peer: peer, Members: []string{me}, Epoch: st.Epoch}
-	to := []string{peer, me}
+	to := []string{me} // the members before the commit (§10.2)
 	welcomeTo := []string{peer}
 	if ownAdded {
 		welcomeTo = append(welcomeTo, me)

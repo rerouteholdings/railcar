@@ -691,8 +691,10 @@ func (e *Engine) ccommit(ctx context.Context, cm *Community, g *CGroup, o ccommi
 		if err != nil {
 			return err
 		}
+		// The members group and an unpinned restricted group require
+		// 0xF0A1 and 0xF0A3; a pinned restricted group 0xF0A4 too (§16.5).
 		req := []uint16{ExtGroup, ExtCommunityHead}
-		if g.See != nil {
+		if g.See != nil && hasHead {
 			req = append(req, ExtRestrictedHead)
 		}
 		if o.required != nil {

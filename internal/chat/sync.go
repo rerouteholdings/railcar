@@ -231,7 +231,7 @@ func (e *Engine) syncChat(ctx context.Context, ch *Chat) (bool, error) {
 		next.Basis[id], next.Heads[id] = b, b.Ref()
 	}
 	settleExt(next, after)
-	if old.Kind == KindDirect && (!after[me] || len(after) > 2) {
+	if old.Kind == KindDirect && (!after[me] || len(after) > 2 || slices.ContainsFunc(slices.Collect(maps.Keys(after)), func(id string) bool { return id != me && id != ch.Peer })) {
 		return false, errors.New("chat: the change would leave the direct chat without its two people")
 	}
 	to := slices.Sorted(maps.Keys(leaves))

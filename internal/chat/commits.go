@@ -419,8 +419,17 @@ func (e *Engine) judgeCommit(ctx context.Context, ch *Chat, before *mls.State, p
 		after[k.id] = true
 		leafCount++
 	}
-	if old.Kind == KindDirect && (len(after) > 2 || !after[e.c.ID()] && !p.Commit.SelfRemoved) {
-		return bad("a direct chat with someone else in it")
+	if old.Kind == KindDirect {
+		// A direct chat's two identities never change, not even by a
+		// swap (§11.3).
+		for _, k := range addKeys {
+			if k.id != e.c.ID() && k.id != ch.Peer {
+				return bad("a direct chat gaining someone else (§11.3)")
+			}
+		}
+		if len(after) > 2 || !after[e.c.ID()] && !p.Commit.SelfRemoved {
+			return bad("a direct chat with someone else in it")
+		}
 	}
 	if len(after) > MaxGroupPeople || leafCount > MaxGroupLeaves {
 		return bad("the group would have more than 25 people or 250 leaves (§11.10)")

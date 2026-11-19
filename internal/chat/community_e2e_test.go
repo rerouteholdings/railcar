@@ -249,6 +249,11 @@ func TestE2ERailcarCommunities(t *testing.T) {
 		t.Fatal(err)
 	}
 	until(t, "ravi gets the keys", func() bool { all(); return hasChannel(ravi, "c.test", "general") })
+	// everyone holds only talk by default, so Ravi can't make codes
+	// (§16.2.3).
+	if _, err := ravi.e.MakeCode(ctx, "c.test", 7, 5); err == nil {
+		t.Fatal("a member with only everyone's permissions made a code")
+	}
 	for _, s := range []string{"one", "two", "three"} {
 		if _, err := kat.e.SendText(ctx, gen.ID, s, ""); err != nil {
 			t.Fatal(err)
