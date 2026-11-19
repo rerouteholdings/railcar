@@ -114,9 +114,10 @@ type Resolver struct {
 	// Self is the server whose document is always fetched directly.
 	Self string
 
-	mu   sync.Mutex
-	docs map[string]cachedDoc
-	keys map[string]map[string]ServerKey // server → kid → key, kept until exp
+	mu     sync.Mutex
+	direct map[string]bool
+	docs   map[string]cachedDoc
+	keys   map[string]map[string]ServerKey // server → kid → key, kept until exp
 }
 
 type cachedDoc struct {
@@ -198,8 +199,29 @@ func (r *Resolver) Refresh(ctx context.Context, name string) (*ServerDoc, error)
 	return doc, nil
 }
 
+// Direct makes the resolver fetch a server's document from the server
+// itself, not through Via. A device that connects to a server anyway, as
+// it does to a community server (§16.1), hides nothing by asking another.
+func (r *Resolver) Direct(name string) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.direct == nil {
+		r.direct = map[string]bool{}
+	}
+	if !r.direct[name] {
+		r.direct[name] = true
+		delete(r.docs, name)
+	}
+}
+
+func (r *Resolver) isDirect(name string) bool {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.direct[name]
+}
+
 func (r *Resolver) fetchDoc(ctx context.Context, name string) (*ServerDoc, time.Duration, error) {
-	if r.Via != nil && name != r.Self {
+	if r.Via != nil && name != r.Self && !r.isDirect(name) {
 		body, err := r.Via(ctx, name)
 		if err != nil {
 			return nil, 0, fmt.Errorf("discovery: %s: %w", name, err)

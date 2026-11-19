@@ -90,6 +90,8 @@ type Client struct {
 	device *identity.Device
 	chain  *identity.Chain
 	signIn sync.Mutex // one sign-in at a time
+
+	communities map[string]*Community
 }
 
 // Errors a caller can branch on.

@@ -51,6 +51,9 @@ const (
 	// EventDisconnected: the connection dropped. The stream reconnects
 	// with backoff; Err says why, and Retry when.
 	EventDisconnected
+	// EventVoice: a community server's voice signaling, such as
+	// voice-state, as the raw frame.
+	EventVoice
 	// EventStopped: the stream ended for good, and the channel closes
 	// after it. Err is ErrDeviceRemoved after close code 4403, an
 	// authentication error after 4401 that signing in again didn't fix, or
@@ -59,7 +62,7 @@ const (
 )
 
 func (k EventKind) String() string {
-	return [...]string{"connected", "item", "presence", "error", "disconnected", "stopped"}[k]
+	return [...]string{"connected", "item", "presence", "error", "disconnected", "voice", "stopped"}[k]
 }
 
 // Event is one thing the live stream reports.
@@ -98,15 +101,54 @@ func (c *Client) Stream(ctx context.Context, opts StreamOptions) <-chan Event {
 		size = 64
 	}
 	ch := make(chan Event, size)
-	go c.runStream(ctx, opts, ch)
+	go runStream(ctx, homeStream{c}, opts, ch)
 	return ch
 }
+
+// streamSource is a server whose live stream runStream keeps open: the
+// homeserver, or a community server (§16.1).
+type streamSource interface {
+	// prepare connects and signs in when there's no session, and returns
+	// the API base. A streamStop error ends the stream.
+	prepare(ctx context.Context) (string, error)
+	token() string
+	signIn(ctx context.Context) error
+	cursor() string
+	http() *http.Client
+	what() string // "homeserver" or "community server", for errors
+}
+
+// homeStream is the homeserver's stream.
+type homeStream struct{ c *Client }
+
+func (h homeStream) prepare(ctx context.Context) (string, error) {
+	c := h.c
+	if err := c.connect(ctx); err != nil {
+		return "", err
+	}
+	if c.token() == "" {
+		if err := c.SignIn(ctx); err != nil {
+			if errors.Is(err, ErrDeviceRemoved) {
+				return "", streamStop{err}
+			}
+			return "", err
+		}
+	}
+	_ = c.flushRecoveryWrap(ctx) // best effort; it's kept until it works
+	return c.api.base, nil
+}
+
+func (h homeStream) token() string                    { return h.c.token() }
+func (h homeStream) signIn(ctx context.Context) error { return h.c.SignIn(ctx) }
+func (h homeStream) cursor() string                   { return h.c.Cursor() }
+func (h homeStream) http() *http.Client               { return h.c.opts.httpClient() }
+func (h homeStream) what() string                     { return "homeserver" }
 
 type streamStop struct{ err error }
 
 func (s streamStop) Error() string { return s.err.Error() }
 
-func (c *Client) runStream(ctx context.Context, opts StreamOptions, ch chan<- Event) {
+func runStream(ctx context.Context, src streamSource, opts StreamOptions, ch chan<- Event) {
 	defer close(ch)
 	send := func(e Event) bool {
 		select {
@@ -118,14 +160,14 @@ func (c *Client) runStream(ctx context.Context, opts StreamOptions, ch chan<- Ev
 	}
 	after := opts.After
 	if after == "" {
-		after = c.Cursor()
+		after = src.cursor()
 	}
 	backoff := minBackoff
 	failures := 0
 	reauthed := false
 	for {
 		connected := false
-		err := c.streamOnce(ctx, &after, func(e Event) bool {
+		err := streamOnce(ctx, src, &after, func(e Event) bool {
 			if e.Kind == EventConnected {
 				connected, failures, backoff, reauthed = true, 0, minBackoff, false
 			}
@@ -152,7 +194,7 @@ func (c *Client) runStream(ctx context.Context, opts StreamOptions, ch chan<- Ev
 				return
 			}
 			reauthed = true
-			if serr := c.SignIn(ctx); serr != nil {
+			if serr := src.signIn(ctx); serr != nil {
 				send(Event{Kind: EventStopped, Err: serr})
 				return
 			}
@@ -197,31 +239,23 @@ type frame struct {
 
 // streamOnce runs one connection until it ends. It returns the reason,
 // which is a streamStop for reasons reconnecting can't fix.
-func (c *Client) streamOnce(ctx context.Context, after *string, emit func(Event) bool) error {
-	if err := c.connect(ctx); err != nil {
+func streamOnce(ctx context.Context, src streamSource, after *string, emit func(Event) bool) error {
+	base, err := src.prepare(ctx)
+	if err != nil {
 		return err
 	}
-	if c.token() == "" {
-		if err := c.SignIn(ctx); err != nil {
-			if errors.Is(err, ErrDeviceRemoved) {
-				return streamStop{err}
-			}
-			return err
-		}
-	}
-	_ = c.flushRecoveryWrap(ctx) // best effort; it's kept until it works
 
-	hc := *c.opts.httpClient()
+	hc := *src.http()
 	hc.Timeout = 0 // the WebSocket library uses the context instead
 	dctx, cancel := context.WithTimeout(ctx, dialTimeout)
-	conn, resp, err := websocket.Dial(dctx, streamURL(c.api.base), &websocket.DialOptions{
+	conn, resp, err := websocket.Dial(dctx, streamURL(base), &websocket.DialOptions{
 		HTTPClient:   &hc,
 		Subprotocols: []string{wire.Subprotocol},
 	})
 	cancel()
 	if err != nil {
 		if resp != nil && resp.StatusCode == http.StatusNotFound {
-			return streamStop{fmt.Errorf("client: the homeserver has no stream: %w", err)}
+			return streamStop{fmt.Errorf("client: the %s has no stream: %w", src.what(), err)}
 		}
 		return err
 	}
@@ -248,7 +282,7 @@ func (c *Client) streamOnce(ctx context.Context, after *string, emit func(Event)
 	}
 
 	// The first frame authenticates (API conventions).
-	auth := map[string]string{"t": "auth", "token": c.token()}
+	auth := map[string]string{"t": "auth", "token": src.token()}
 	if *after != "" {
 		auth["after"] = *after
 	}
@@ -332,7 +366,15 @@ func (c *Client) streamOnce(ctx context.Context, after *string, emit func(Event)
 				return ctx.Err()
 			}
 		default:
-			// Unknown frame types are ignored (§20.2).
+			if strings.HasPrefix(f.T, "voice-") {
+				// Voice signaling from a community server (community
+				// server API, "Voice").
+				if !emit(Event{Kind: EventVoice, Frame: jsontext.Value(data)}) {
+					return ctx.Err()
+				}
+				continue
+			}
+			// Other unknown frame types are ignored (§20.2).
 		}
 	}
 }
