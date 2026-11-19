@@ -331,6 +331,19 @@ func interop(t *testing.T, katServer, raviServer string) {
 	settle()
 	kat.sync()
 	kat.find(lch.ID, "hello Kat, from Lee")
+
+	// Lee commits in the chat Railcar created and hubs: Railcar's hub
+	// takes the commit only if both derived the same epoch key (§11.6).
+	lee.run("new-message-key")
+	settle()
+	kat.sync()
+	if c, _ := kat.e.Chat(lch.ID); c.Epoch != 2 || c.Stopped != "" {
+		t.Fatalf("after Lee's Update: %+v", c)
+	}
+	lee.run("send", katHandle, "from Lee, with a new message key")
+	settle()
+	kat.sync()
+	kat.find(lch.ID, "from Lee, with a new message key")
 }
 
 func TestE2EInteropOneServer(t *testing.T) { interop(t, "a.test", "a.test") }
