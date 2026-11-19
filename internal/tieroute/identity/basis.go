@@ -51,6 +51,10 @@ const (
 	// MustNotBeDevice: the key isn't a device, for a Remove by a member who
 	// isn't an admin (§11.9).
 	MustNotBeDevice
+	// NoCheck: nothing beyond the history itself, for an identity a commit
+	// names only to advance its head (§7.1). The caller can make its own
+	// checks on the returned chain.
+	NoCheck
 )
 
 // ErrBasis wraps every reason a basis is invalid.
