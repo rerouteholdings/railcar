@@ -153,8 +153,8 @@ func TestTypingShows(t *testing.T) {
 
 func TestReadReceiptQuestion(t *testing.T) {
 	a, b := started(t, 120, 40)
-	drive(a, b, a.main.openChat(a, "noor", false))
-	if a.main.overlay != overlayReceipts || !strings.Contains(plain(a), "Send read receipts to Noor") {
+	drive(a, b, a.main.openChat(a, "oskar", false))
+	if a.main.overlay != overlayReceipts || !strings.Contains(plain(a), "Send read receipts to Oskar") {
 		t.Fatalf("the question didn't show:\n%s", plain(a))
 	}
 	send(a, b, tea.KeyPressMsg{Code: 'y', Text: "y"})
@@ -166,7 +166,7 @@ func TestReadReceiptQuestion(t *testing.T) {
 	}
 	// It's asked once.
 	drive(a, b, a.main.openChat(a, "ravi", false))
-	drive(a, b, a.main.openChat(a, "noor", false))
+	drive(a, b, a.main.openChat(a, "oskar", false))
 	if a.main.overlay != overlayNone {
 		t.Fatal("the question came back")
 	}
@@ -202,5 +202,13 @@ func TestBackupPassphraseHidden(t *testing.T) {
 	send(a, b, tea.KeyPressMsg{Code: tea.KeyEnter})
 	if a.main.overlay != overlayNone {
 		t.Fatalf("the box stayed: %q", a.main.pass.err)
+	}
+}
+
+func TestReadReceiptQuestionFromPalette(t *testing.T) {
+	a, b := started(t, 120, 40)
+	runCommand(a, b, "Open Oskar")
+	if a.main.overlay != overlayReceipts {
+		t.Fatalf("opening Oskar's chat from the palette: overlay %v", a.main.overlay)
 	}
 }

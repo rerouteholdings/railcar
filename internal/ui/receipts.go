@@ -13,7 +13,9 @@ import (
 // asked yet.
 func (m *mainView) askReceipts() {
 	c, ok := m.activeChat()
-	if !ok || c.ReceiptAsk == nil || m.overlay != overlayNone || m.receiptAsked[c.ID] {
+	// The palette closes once the command that opened the chat returns,
+	// and leaves this box open.
+	if !ok || c.ReceiptAsk == nil || m.overlay != overlayNone && m.overlay != overlayPalette || m.receiptAsked[c.ID] {
 		return
 	}
 	m.receiptAsked[c.ID] = true
