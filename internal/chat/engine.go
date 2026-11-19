@@ -212,6 +212,10 @@ func (e *Engine) topUp(ctx context.Context) error {
 // Run keeps the live stream open and processes every inbox item until ctx
 // ends or the stream stops for good. It tops up key packages first.
 func (e *Engine) Run(ctx context.Context) error {
+	// A move that stopped partway comes first (§6.6).
+	if err := e.FinishMove(ctx); err != nil {
+		e.log.Info("chat: finishing the move to another homeserver", "err", err)
+	}
 	if err := e.EnsureKeyPackages(ctx); err != nil {
 		e.log.Debug("chat: key packages", "err", err)
 	}

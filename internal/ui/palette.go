@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"context"
 	"strings"
 
 	"charm.land/bubbles/v2/textinput"
@@ -73,6 +74,20 @@ func newCommandPalette(a *App, m *mainView) *commandPalette {
 		{label: "Delete your last message", names: []string{"delete"}, run: func(a *App) tea.Cmd { return a.main.deleteLast(a) }},
 		{label: "React to the last message", names: []string{"react"}, run: func(a *App) tea.Cmd { return a.main.reactLast(a, "") },
 			withArg: func(a *App, emoji string) tea.Cmd { return a.main.reactLast(a, emoji) }},
+		{label: "Move to another homeserver", names: []string{"move"}, run: func(a *App) tea.Cmd {
+			a.main.notice = "Type :move, the new homeserver, your name there, and its registration code, such as :move chat.example.org kat CODE"
+			return nil
+		}, withArg: func(a *App, arg string) tea.Cmd {
+			f := strings.Fields(arg)
+			for len(f) < 3 {
+				f = append(f, "")
+			}
+			a.main.notice = "Moving to " + f[0]
+			return call(func(ctx context.Context) tea.Msg {
+				ok, err := a.b.Act(ctx, "", Action{Kind: "move", Arg: f[0], Arg2: f[1], Arg3: f[2]})
+				return actedMsg{ok, err, false}
+			})
+		}},
 		{label: "Turn on the message backup", names: []string{"backup-on"}, run: func(a *App) tea.Cmd { return a.main.openPassphrase(a, "backup-on") }},
 		{label: "Back up what's new now", names: []string{"backup-now"}, run: func(a *App) tea.Cmd { return a.main.act(a, "backup-now", "", "", false) }},
 		{label: "Show the backup's state", names: []string{"backup"}, run: func(a *App) tea.Cmd { return a.main.act(a, "backup-status", "", "", false) }},

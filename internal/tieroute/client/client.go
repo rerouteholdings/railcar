@@ -74,6 +74,7 @@ type savedState struct {
 	Cursor       string        `json:"cursor,omitempty"`       // the last cursor this device acked
 	PendingWrap  *WrappedKey   `json:"pending_wrap,omitempty"` // a recovery wrap the homeserver hasn't taken yet
 	LinkKey      wire.Bytes    `json:"link_key,omitempty"`     // a linked device's HPKE private key, until its link bundle opens
+	Move         *PendingMove  `json:"move,omitempty"`         // a move to another homeserver this device hasn't finished (§6.6)
 }
 
 // Client is a signed-up identity on this device. Its methods are safe for
@@ -92,6 +93,9 @@ type Client struct {
 	signIn sync.Mutex // one sign-in at a time
 
 	communities map[string]*Community
+
+	// restart closes when this device switches homeservers.
+	restart chan struct{}
 }
 
 // Errors a caller can branch on.
@@ -109,6 +113,7 @@ func newClient(p *store.Profile, opts Options) *Client {
 		profile:  p,
 		resolver: &discovery.Resolver{HTTP: opts.httpClient(), Origins: opts.Origins},
 		clock:    &Clock{},
+		restart:  make(chan struct{}),
 	}
 	c.resolver.Via = c.fetchServerDoc
 	return c

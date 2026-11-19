@@ -116,6 +116,9 @@ type streamSource interface {
 	cursor() string
 	http() *http.Client
 	what() string // "homeserver" or "community server", for errors
+	// restarted closes when the stream has to start again elsewhere,
+	// with the cursor it has then; nil never closes.
+	restarted() <-chan struct{}
 }
 
 // homeStream is the homeserver's stream.
@@ -143,6 +146,7 @@ func (h homeStream) signIn(ctx context.Context) error { return h.c.SignIn(ctx) }
 func (h homeStream) cursor() string                   { return h.c.Cursor() }
 func (h homeStream) http() *http.Client               { return h.c.opts.httpClient() }
 func (h homeStream) what() string                     { return "homeserver" }
+func (h homeStream) restarted() <-chan struct{}       { return h.c.Restarted() }
 
 type streamStop struct{ err error }
 
@@ -167,7 +171,8 @@ func runStream(ctx context.Context, src streamSource, opts StreamOptions, ch cha
 	reauthed := false
 	for {
 		connected := false
-		err := streamOnce(ctx, src, &after, func(e Event) bool {
+		restart := src.restarted()
+		err := streamOnce(ctx, src, &after, restart, func(e Event) bool {
 			if e.Kind == EventConnected {
 				connected, failures, backoff, reauthed = true, 0, minBackoff, false
 			}
@@ -181,6 +186,13 @@ func runStream(ctx context.Context, src streamSource, opts StreamOptions, ch cha
 		if errors.As(err, &stop) {
 			send(Event{Kind: EventStopped, Err: stop.err})
 			return
+		}
+		select {
+		case <-restart:
+			// Another homeserver now: its inbox, from its start.
+			after = src.cursor()
+			continue
+		default:
 		}
 		switch websocket.CloseStatus(err) {
 		case closeNotAllowed:
@@ -239,7 +251,7 @@ type frame struct {
 
 // streamOnce runs one connection until it ends. It returns the reason,
 // which is a streamStop for reasons reconnecting can't fix.
-func streamOnce(ctx context.Context, src streamSource, after *string, emit func(Event) bool) error {
+func streamOnce(ctx context.Context, src streamSource, after *string, restart <-chan struct{}, emit func(Event) bool) error {
 	base, err := src.prepare(ctx)
 	if err != nil {
 		return err
@@ -268,6 +280,15 @@ func streamOnce(ctx context.Context, src streamSource, after *string, emit func(
 
 	sctx, stop := context.WithCancel(ctx)
 	defer stop()
+	if restart != nil {
+		go func() {
+			select {
+			case <-restart:
+				conn.Close(websocket.StatusNormalClosure, "moved")
+			case <-sctx.Done():
+			}
+		}()
+	}
 	var wmu sync.Mutex
 	write := func(v any) error {
 		b, err := wire.Marshal(v)

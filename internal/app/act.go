@@ -129,6 +129,15 @@ func act(ctx context.Context, eng *chat.Engine, chatID string, a ui.Action) (str
 	if msg, ok, err := actBackup(ctx, eng, a); ok {
 		return msg, err
 	}
+	if a.Kind == "move" {
+		if a.Arg == "" || a.Arg2 == "" {
+			return "", errors.New("type :move, the new homeserver, your name there, and its registration code if it needs one")
+		}
+		if err := eng.Move(ctx, a.Arg, a.Arg2, a.Arg3); err != nil {
+			return "", err
+		}
+		return "You moved to " + a.Arg + ". You're @" + eng.Client().Handle() + " now", nil
+	}
 	if a.Kind == "report" {
 		if err := eng.Report(ctx, chatID, []string{a.Arg2}, a.Arg, a.Arg3 == "forward"); err != nil {
 			return "", err

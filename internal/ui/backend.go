@@ -185,6 +185,8 @@ type Backend interface {
 //     backup-status, backup-off, and restore-backup (Arg: the
 //     passphrase, or empty when this device has the account key; a
 //     backend returns ErrPassphraseNeeded when it needs one).
+//   - Moving (§6.6): move (Arg: the new homeserver, Arg2: the name to
+//     use there, Arg3: its registration code).
 //   - Reports (§17.2): report (Arg: the reason, Arg2: a message's ID,
 //     Arg3: forward to also send it to the sender's homeserver).
 //   - Read receipts (§13.3): read-receipts, whether to send them in the
