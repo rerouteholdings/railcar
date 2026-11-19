@@ -340,6 +340,24 @@ func TestE2ERailcarCommunities(t *testing.T) {
 		t.Fatal("ravi lost #general's name")
 	}
 
+	// Mentions and @everyone (§12, §16.3).
+	if _, err := kat.e.SendText(ctx, gen.ID, "@ravi.b.test are you on tonight?", ""); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := kat.e.SendText(ctx, gen.ID, "@everyone the yard closes early", ""); err != nil {
+		t.Fatal(err)
+	}
+	until(t, "ravi gets the mentions", func() bool {
+		ravi.sync()
+		msgs, _ := ravi.e.Messages(gen.ID)
+		var mention, everyone bool
+		for _, m := range msgs {
+			mention = mention || m.Body == "@ravi.b.test are you on tonight?" && m.Mentioned
+			everyone = everyone || m.Body == "@everyone the yard closes early" && m.Everyone
+		}
+		return mention && everyone
+	})
+
 	// Typing in a channel reaches a member on the live stream, and isn't
 	// numbered or kept (§13.3).
 	rctx, cancel := context.WithCancel(ctx)
@@ -371,5 +389,5 @@ func TestE2ERailcarCommunities(t *testing.T) {
 	if _, err := kat.e.SendText(ctx, gen.ID, "after typing", ""); err != nil {
 		t.Fatal(err)
 	}
-	until(t, "ravi gets the message after typing", func() bool { return slices.Contains(ravi.bodies(gen.ID), "7:after typing") })
+	until(t, "ravi gets the message after typing", func() bool { return slices.Contains(ravi.bodies(gen.ID), "9:after typing") })
 }

@@ -2,6 +2,7 @@ package ui
 
 import (
 	"context"
+	"os"
 	"sort"
 	"strconv"
 	"strings"
@@ -137,6 +138,11 @@ type mainView struct {
 	// pass is the backup passphrase box.
 	pass passState
 
+	// notify is how this terminal shows notifications, and quiet turns
+	// them off for this run.
+	notify notifyKind
+	quiet  bool
+
 	// follow is the handle of a contact request that was open when it left
 	// the list. Their direct chat opens when it arrives.
 	follow string
@@ -158,6 +164,7 @@ func newMainView(a *App) *mainView {
 		typing:   map[string]map[string]typist{},
 
 		receiptAsked: map[string]bool{},
+		notify:       detectNotify(os.Getenv),
 		folded:       map[string]bool{},
 		help:         help.New(),
 	}
@@ -676,6 +683,7 @@ func (m *mainView) handleEvent(a *App, e Event) tea.Cmd {
 		if e.Message.Chat == m.active {
 			m.refresh(a, e.Message.Mine)
 		}
+		return m.mentionNotice(a, e.Message)
 	case MessageChanged:
 		m.upsert(e.Message, true)
 		if e.Message.Chat == m.active {

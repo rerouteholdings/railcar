@@ -83,6 +83,9 @@ func messageBody(t *theme, m Message, width int) string {
 	if m.Read {
 		marks = append(marks, t.dim.Render("Read"))
 	}
+	if m.Mention && !m.Mine {
+		marks = append(marks, t.accent.Render("Mentions you"))
+	}
 	switch m.Status {
 	case StatusSending:
 		marks = append(marks, t.dim.Render("Sending…"))

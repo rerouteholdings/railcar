@@ -442,6 +442,9 @@ type Message struct {
 	// Read is true for the identity's own message once the other side sent
 	// a read receipt for it (§13.3).
 	Read bool
+	// Mention is true for a message that @-mentions the identity, or an
+	// @everyone that counts (§12, §16.3).
+	Mention bool
 	// System marks a line Railcar shows on its own, such as "@kat has a new
 	// device" (§11.9). It has no sender.
 	System bool

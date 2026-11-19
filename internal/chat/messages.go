@@ -90,7 +90,7 @@ func (e *Engine) applyContent(ctx context.Context, ch *Chat, from string, am App
 	}
 	switch c := c.(type) {
 	case Text:
-		return e.addMessage(ch, Message{ID: c.ID, From: from, TS: am.TS, Received: received, Body: *c.Body, Reply: c.Reply, AskedReceipt: c.Receipt, Status: Sent, Files: attachments(c.Files)})
+		return e.addMessage(ch, Message{ID: c.ID, From: from, TS: am.TS, Received: received, Body: *c.Body, Reply: c.Reply, AskedReceipt: c.Receipt, Status: Sent, Files: attachments(c.Files), Mentioned: slices.Contains(c.Mentions, e.c.ID())})
 	case File:
 		return e.addMessage(ch, Message{ID: c.ID, From: from, TS: am.TS, Received: received, Status: Sent, Files: []Attachment{{Ref: *c.Ref}}})
 	case Edit:
@@ -272,7 +272,7 @@ func (e *Engine) SendText(ctx context.Context, chat, body, reply string) (Messag
 	if err := e.addMessage(ch, m); err != nil {
 		return Message{}, err
 	}
-	c := Text{T: CText, ID: m.ID, TS: now, Body: &body, Reply: reply, Receipt: ask}
+	c := Text{T: CText, ID: m.ID, TS: now, Body: &body, Reply: reply, Receipt: ask, Mentions: e.mentionsIn(ch, body)}
 	if ch.Kind == KindChannel {
 		if strings.Contains(" "+body+" ", " @everyone ") {
 			c.Everyone = true
@@ -453,4 +453,32 @@ func (e *Engine) sendContent(ctx context.Context, ch *Chat, content any, ephemer
 // aren't tied to messages yet, so it's logged.
 func (e *Engine) deliveryFailed(n *client.Notice) {
 	e.log.Info("chat: a delivery failed", "reason", n.Reason, "recipients", len(n.To))
+}
+
+// mentionsIn finds the people a text @-mentions: each @handle in body
+// that names someone in the chat, other than this identity (§12). The
+// body keeps the readable @handle.
+func (e *Engine) mentionsIn(ch *Chat, body string) []string {
+	if !strings.Contains(body, "@") {
+		return nil
+	}
+	byHandle := map[string]string{}
+	for _, id := range ch.Members {
+		if h := e.handleOf(id); h != "" && id != e.c.ID() {
+			byHandle[strings.ToLower(h)] = id
+		}
+	}
+	var out []string
+	for _, f := range strings.FieldsFunc(body, func(r rune) bool {
+		return r == ' ' || r == '\n' || r == '\t' || r == ',' || r == ':' || r == ';' || r == '!' || r == '?' || r == '(' || r == ')'
+	}) {
+		if !strings.HasPrefix(f, "@") {
+			continue
+		}
+		h := strings.ToLower(strings.TrimRight(strings.TrimPrefix(f, "@"), "."))
+		if id, ok := byHandle[h]; ok && !slices.Contains(out, id) {
+			out = append(out, id)
+		}
+	}
+	return out
 }

@@ -8,6 +8,7 @@ import (
 	"image/png"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -197,5 +198,13 @@ func TestE2EInteropGroupExtras(t *testing.T) {
 	if !kat.has(pOffer.ID, "after the re-creation") {
 		out := lee.run("groups")
 		t.Fatalf("Kat didn't hear Lee in the re-created group; Lee's groups: %s", strings.TrimSpace(out))
+	}
+
+	// A mention from Reroute (§12).
+	lee.run("send", "Platform", "@kat.a.test look at the board")
+	syncAll()
+	msgs, _ := kat.e.Messages(pOffer.ID)
+	if i := slices.IndexFunc(msgs, func(m Message) bool { return m.Body == "@kat.a.test look at the board" }); i < 0 || !msgs[i].Mentioned {
+		t.Fatal("Reroute's mention of Kat didn't count")
 	}
 }

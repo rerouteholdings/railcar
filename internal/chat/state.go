@@ -171,6 +171,9 @@ type Message struct {
 	GapEnd uint64 `json:"gap_end,omitempty"`
 	// Everyone marks an @everyone that counts (§12, §16.3).
 	Everyone bool `json:"everyone,omitempty"`
+	// Mentioned is set when the message's mentions name this identity
+	// (§12).
+	Mentioned bool `json:"mentioned,omitempty"`
 	// Files are the message's attachments (§14).
 	Files []Attachment `json:"files,omitempty"`
 }

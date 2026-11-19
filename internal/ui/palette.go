@@ -67,6 +67,14 @@ func newCommandPalette(a *App, m *mainView) *commandPalette {
 		{label: "Save the latest attachments", names: []string{"save"}, run: func(a *App) tea.Cmd { return a.main.act(a, "save", "", "", false) },
 			withArg: func(a *App, dir string) tea.Cmd { return a.main.act(a, "save", dir, "", false) }},
 		argCommand("Ask for read receipts on your messages: on or off", "ask-receipts", "ask-receipts", "on or off", false),
+		{label: "Turn notifications for mentions on or off", names: []string{"notifications"}, run: func(a *App) tea.Cmd {
+			a.main.quiet = !a.main.quiet
+			a.main.notice = "Notifications for mentions are on"
+			if a.main.quiet {
+				a.main.notice = "Notifications for mentions are off until Railcar starts again"
+			}
+			return nil
+		}},
 		{label: "Find a chat", names: []string{"find"}, run: func(a *App) tea.Cmd { return a.main.findChat(a) }},
 		{label: details, names: []string{"details", "info"}, run: func(a *App) tea.Cmd { a.main.toggleDetails(a); return nil }},
 		{label: "Reply to the last message", names: []string{"reply"}, run: func(a *App) tea.Cmd { return a.main.startReply(a) }},

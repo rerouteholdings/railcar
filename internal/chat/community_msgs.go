@@ -819,7 +819,7 @@ func (e *Engine) applyChannel(ctx context.Context, cm *Community, g *CGroup, cha
 	}
 	switch c := content.(type) {
 	case Text:
-		m := Message{ID: c.ID, From: from, TS: am.TS, Received: received, Body: *c.Body, Reply: c.Reply, Status: Sent, Seq: seq, Files: attachments(c.Files)}
+		m := Message{ID: c.ID, From: from, TS: am.TS, Received: received, Body: *c.Body, Reply: c.Reply, Status: Sent, Seq: seq, Files: attachments(c.Files), Mentioned: slices.Contains(c.Mentions, e.c.ID())}
 		if c.Everyone && strings.Contains(" "+*c.Body+" ", " @everyone ") && st.Can(from, community.PermModerate) && st.SeesChannel(from, cch) {
 			m.Everyone = true
 		}
