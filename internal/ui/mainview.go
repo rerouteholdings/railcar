@@ -1183,7 +1183,7 @@ func (m *mainView) detailsView(a *App, w int) string {
 	if c.Topic != "" {
 		b.WriteString("\n")
 		line(t.dim.Render("Topic"))
-		b.WriteString(t.text.Width(w - 1).PaddingLeft(1).Render(c.Topic) + "\n")
+		b.WriteString(t.text.Width(w-1).PaddingLeft(1).Render(c.Topic) + "\n")
 	}
 	b.WriteString("\n")
 	if c.Kind == DirectChat {
