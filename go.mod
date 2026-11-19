@@ -13,6 +13,9 @@ require (
 	github.com/coder/websocket v1.8.15
 	github.com/zalando/go-keyring v0.2.8
 	golang.org/x/crypto v0.59.0
+	golang.org/x/image v0.47.0
+	golang.org/x/text v0.44.0
+	rsc.io/qr v0.2.0
 )
 
 require (
@@ -40,6 +43,4 @@ require (
 	github.com/xo/terminfo v1.0.0 // indirect
 	golang.org/x/sync v0.25.0 // indirect
 	golang.org/x/sys v0.50.0 // indirect
-	golang.org/x/text v0.44.0 // indirect
-	rsc.io/qr v0.2.0 // indirect
 )

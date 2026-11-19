@@ -5,6 +5,7 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/rerouteholdings/railcar/internal/tieroute/client"
 	"github.com/rerouteholdings/railcar/internal/tieroute/store"
 	"github.com/rerouteholdings/railcar/internal/tieroute/wire"
 )
@@ -158,6 +159,21 @@ type Message struct {
 	GapEnd uint64 `json:"gap_end,omitempty"`
 	// Everyone marks an @everyone that counts (§12, §16.3).
 	Everyone bool `json:"everyone,omitempty"`
+	// Files are the message's attachments (§14).
+	Files []Attachment `json:"files,omitempty"`
+}
+
+// Attachment is a file in a message: its media-ref, and what this device
+// learned about it, such as an image's size in pixels once it had the
+// bytes, or where it saved it (§14).
+type Attachment struct {
+	Ref    client.MediaRef `json:"ref"`
+	Width  int             `json:"width,omitempty"`
+	Height int             `json:"height,omitempty"`
+	Saved  string          `json:"saved,omitempty"`
+	// Gone is "expired" or "removed" once the homeserver said so (§14,
+	// §17.2).
+	Gone string `json:"gone,omitempty"`
 }
 
 // state is the record that holds contacts and chats.
@@ -226,6 +242,8 @@ func preview(m Message) string {
 		return "Message deleted"
 	case m.Unsupported != "":
 		return "Unsupported message"
+	case m.Body == "" && len(m.Files) > 0:
+		return fileLabel(m.Files[0].Ref)
 	}
 	line, _, _ := strings.Cut(m.Body, "\n")
 	if r := []rune(line); len(r) > 80 {

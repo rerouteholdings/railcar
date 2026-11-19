@@ -415,6 +415,12 @@ func uiMessage(eng *chat.Engine, me, chatID string, m chat.Message) ui.Message {
 		Sent: time.Unix(m.TS, 0), Text: m.Body, ReplyTo: m.Reply, Edited: m.Edited,
 		Deleted: m.Deleted, Unsupported: m.Unsupported != "", Read: len(m.ReadBy) > 0, System: m.System, Seq: m.Seq,
 	}
+	for _, f := range m.Files {
+		out.Files = append(out.Files, ui.Attachment{
+			Name: f.Ref.Name, MIME: f.Ref.MIME, Size: f.Ref.Size,
+			Width: f.Width, Height: f.Height, Saved: f.Saved, Gone: f.Gone,
+		})
+	}
 	switch m.Status {
 	case chat.Sending:
 		out.Status = ui.StatusSending

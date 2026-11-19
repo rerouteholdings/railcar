@@ -120,6 +120,7 @@ func (d *DemoBackend) seed() {
 		text    string
 		replyTo int // index of an earlier line, plus one
 		edited  bool
+		files   []Attachment
 	}
 	add := func(chat Chat, unread int, lines []line) {
 		ids := make([]string, len(lines))
@@ -134,6 +135,7 @@ func (d *DemoBackend) seed() {
 				Sent:   l.at,
 				Text:   l.text,
 				Edited: l.edited,
+				Files:  l.files,
 			}
 			if l.replyTo > 0 {
 				m.ReplyTo = ids[l.replyTo-1]
@@ -170,10 +172,12 @@ func (d *DemoBackend) seed() {
 	add(Chat{ID: "mia", Kind: DirectChat, Title: demoMia.Name, Members: []Member{demoMia}}, 0, []line{
 		{from: demoMia, at: day(2, 9, 15), text: "Did you finish the chapter on signal boxes?"},
 		{from: me, at: day(2, 9, 31), text: "Halfway. The part about tablet working is better than I expected."},
+		{from: demoMia, at: day(2, 9, 32), files: []Attachment{{Name: "signal-box-diagram.png", MIME: "image/png", Size: 284211, Width: 1600, Height: 900}}},
 		{from: demoMia, at: day(2, 9, 33), text: "Wait until you get to the tie lines."},
 	})
 	add(Chat{ID: "oskar", Kind: DirectChat, Title: demoOskar.Name, Members: []Member{demoOskar}}, 0, []line{
 		{from: demoOskar, at: day(1, 8, 5), text: "Can I borrow your tent stakes? Mine went missing on the last trip."},
+		{from: demoOskar, at: day(1, 8, 6), files: []Attachment{{Name: "voice-message.ogg", MIME: "audio/ogg", Size: 48213}}},
 		{from: me, at: day(1, 8, 20), text: "Sure, I'll put them in your car on Saturday."},
 	})
 	add(Chat{ID: "books", Kind: GroupChat, Title: "Book club", Members: []Member{demoMia, demoNoor, demoOskar}}, 0, []line{

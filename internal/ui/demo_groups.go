@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"path/filepath"
 	"slices"
 	"strings"
 )
@@ -72,6 +73,9 @@ func (d *DemoBackend) Act(_ context.Context, chat string, a Action) (string, err
 	c := d.chats[chat]
 	if line, ok := d.actPeople(a); ok {
 		return line, nil
+	}
+	if c != nil && (a.Kind == "attach" || a.Kind == "save") {
+		return d.actFiles(c, a)
 	}
 	switch a.Kind {
 	case "create-community", "join-community":
@@ -154,4 +158,40 @@ func (d *DemoBackend) actPeople(a Action) (string, bool) {
 		return "Name: " + id.DisplayName + ", presence: " + id.Presence, true
 	}
 	return "", false
+}
+
+// actFiles sends and saves files in the demo (§14). Nothing is read or
+// written: a sent file is named after the path, and saving only marks it.
+// The caller holds d.mu.
+func (d *DemoBackend) actFiles(c *Chat, a Action) (string, error) {
+	if a.Kind == "attach" {
+		name := filepath.Base(strings.TrimSpace(a.Arg))
+		if name == "." || name == "" {
+			return "", errors.New("Name a file, as :attach ~/Pictures/map.png")
+		}
+		d.nextID++
+		m := Message{
+			ID: fmt.Sprintf("m%d", d.nextID), Chat: c.ID, Sender: Member{Name: d.displayName(), Handle: d.handle()},
+			Mine: true, Sent: d.opts.Now(), Files: []Attachment{{Name: name, MIME: "application/octet-stream", Size: 52000}},
+		}
+		d.messages[c.ID] = append(d.messages[c.ID], m)
+		c.LastActivity, c.Preview = m.Sent, "File: "+name
+		d.emit(MessageAdded{Message: m})
+		d.emit(ChatChanged{Chat: *c})
+		return "Sent " + name + " (the demo sends nothing)", nil
+	}
+	msgs := d.messages[c.ID]
+	for i := len(msgs) - 1; i >= 0; i-- {
+		if len(msgs[i].Files) > 0 {
+			dir := strings.TrimSpace(a.Arg)
+			if dir == "" {
+				dir = "~/Downloads"
+			}
+			path := filepath.Join(dir, msgs[i].Files[0].Name)
+			msgs[i].Files[0].Saved = path
+			d.emit(MessageChanged{Message: msgs[i]})
+			return "Saved to " + path + " (the demo writes nothing)", nil
+		}
+	}
+	return "", errors.New("There's no file in this chat to save")
 }

@@ -36,6 +36,7 @@ go run ./cmd/railcar --demo
    - In a channel: `:code` makes a join code and copies it; `:history` reads the channel's history; `:add-channel` and `:add-voice-channel` take a name; `:add-role Name talk moderate` adds a role; `:give-role @handle Name` assigns one; `:kick`, `:ban`, and `:timeout @handle minutes` moderate; and `:leave-community` leaves.
    - `:presence away Back at 3` sets the presence state, one of available, online, away, busy, or offline, and optionally a status message; `:status` alone sets or clears the status message (§13.2). After 10 minutes without a key or a click, Railcar sets an available or online identity away, and back at the next key.
    - `:name`, `:bio`, `:links`, and `:avatar` change the public profile, which anyone can see (§13.1). `:avatar` takes the path to a PNG, JPEG, WebP, or GIF of at most 1 MB, or `none`. `:profile` shows it.
+   - Ctrl+A, or `:attach`, opens **Send a file**, a file picker that starts in the home folder; `:attach ~/Pictures/map.png` sends a file by its path (§14). Messages show their files with a name, a size, and an image's size in pixels when Railcar has its bytes; audio files show as voice messages, since a terminal can't play them. `:save` downloads the latest message's files to the Downloads folder, or `:save ~/somewhere` to another one. A file past its 30 days shows "This file has expired".
    - `:reply`, `:edit`, `:delete`, and `:react` act on the latest message: someone else's for replying and reacting, the identity's own for editing and deleting. `:react 🎉` picks the emoji; it's 👍 otherwise, and reacting again with the same emoji takes it back.
 
 The mouse works too: click a chat to open it, click a pane to move to it, and scroll the messages or the chat list.
@@ -49,6 +50,7 @@ The mouse works too: click a chat to open it, click a pane to move to it, and sc
 | Ctrl+O | Anywhere | Show or hide the details pane |
 | Ctrl+P | Anywhere | Open the command palette |
 | Ctrl+N | Anywhere | Add a contact |
+| Ctrl+A | Anywhere | Send a file to the open chat |
 | Ctrl+C | Anywhere | Quit |
 | ?, : | Outside the composer | Show help, or open the command palette |
 | Up, Down, Enter, / | The chat list | Move, open a chat, find a chat |

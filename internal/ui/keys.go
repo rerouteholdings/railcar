@@ -18,6 +18,7 @@ type keyMap struct {
 	Command    key.Binding
 	ChatsFind  key.Binding
 	AddContact key.Binding
+	Attach     key.Binding
 
 	// A contact request.
 	Accept  key.Binding
@@ -58,6 +59,7 @@ func newKeyMap() keyMap {
 		Back:       b([]string{"esc"}, "esc", "back"),
 		ChatsFind:  b([]string{"/"}, "/", "find a chat"),
 		AddContact: b([]string{"ctrl+n"}, "ctrl+n", "add a contact"),
+		Attach:     b([]string{"ctrl+a"}, "ctrl+a", "send a file"),
 
 		Accept:  b([]string{"a"}, "a", "accept request"),
 		Decline: b([]string{"d"}, "d", "decline request"),
@@ -96,6 +98,6 @@ func (k keyMap) fullHelp() [][]key.Binding {
 		{k.NextPane, k.PrevPane, k.NextChat, k.PrevChat, k.Back},
 		{k.Up, k.Down, k.Open, k.ChatsFind, k.AddContact, k.Accept, k.Decline},
 		{k.PageUp, k.PageDown, k.Top, k.Bottom, k.Reply, k.EditLast},
-		{k.Send, k.Newline, k.Details, k.Palette, k.Command, k.Help, k.Quit},
+		{k.Send, k.Newline, k.Attach, k.Details, k.Palette, k.Command, k.Help, k.Quit},
 	}
 }

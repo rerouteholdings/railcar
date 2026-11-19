@@ -175,6 +175,12 @@ type Backend interface {
 //     spaces), give-role (Arg: a handle, Arg2: a role's name), history,
 //     kick, ban (Arg: a handle), timeout (Arg: a handle, Arg2: minutes),
 //     and leave-community.
+//   - Profiles and presence (§13): set-presence (Arg: a state, Arg2: a
+//     status message), set-status, set-name, set-bio, set-links (Arg: the
+//     text), set-avatar (Arg: a path, or none), show-profile, and
+//     auto-away (Arg: on or off).
+//   - Files (§14): attach (Arg: a path), and save (Arg: a folder, or
+//     empty for the default), which saves the latest attachments.
 type Action struct {
 	Kind string
 	Arg  string
@@ -415,6 +421,23 @@ type Message struct {
 	// device" (§11.9). It has no sender.
 	System bool
 	Status MessageStatus
+	// Files are the message's attachments (§14).
+	Files []Attachment
+}
+
+// Attachment is a file in a message (§14).
+type Attachment struct {
+	Name string
+	MIME string
+	Size uint64
+	// Width and Height are an image's size in pixels, once Railcar has
+	// had its bytes; zero otherwise.
+	Width, Height int
+	// Saved is where it was saved on this computer, if it was.
+	Saved string
+	// Gone is "expired" or "removed" once the homeserver said the file is
+	// no longer there.
+	Gone string
 }
 
 // Reaction is one emoji on a message, and how many people reacted with it.

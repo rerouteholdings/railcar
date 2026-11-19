@@ -119,6 +119,9 @@ func act(ctx context.Context, eng *chat.Engine, chatID string, a ui.Action) (str
 	if msg, ok, err := actPeople(ctx, eng, a); ok {
 		return msg, err
 	}
+	if msg, ok, err := actFiles(ctx, eng, chatID, a); ok {
+		return msg, err
+	}
 	c, _ := eng.Chat(chatID)
 	server := c.Community
 	who := func() (string, error) {

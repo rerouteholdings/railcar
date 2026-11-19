@@ -105,6 +105,17 @@ func messageBody(t *theme, m Message, width int) string {
 	for i, l := range lines {
 		lines[i] = "  " + t.text.Render(l)
 	}
+	if len(m.Files) > 0 {
+		if strings.TrimSpace(m.Text) == "" {
+			lines = lines[:0]
+			if len(marks) > 0 {
+				lines = append(lines, "  "+strings.Join(marks, " "))
+			}
+		}
+		for _, l := range attachmentLines(t, m.Files, width) {
+			lines = append(lines, "  "+l)
+		}
+	}
 	if len(m.Reactions) > 0 {
 		var rs []string
 		for _, r := range m.Reactions {

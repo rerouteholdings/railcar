@@ -8,6 +8,7 @@ import (
 	"time"
 	"unicode"
 
+	"charm.land/bubbles/v2/filepicker"
 	"charm.land/bubbles/v2/help"
 	"charm.land/bubbles/v2/key"
 	"charm.land/bubbles/v2/list"
@@ -42,6 +43,7 @@ const (
 	overlayApprovalCode
 	overlayDevices
 	overlayNewGroup
+	overlayAttach
 )
 
 // narrowWidth is the width under which the main view shows one pane at a
@@ -94,6 +96,9 @@ type mainView struct {
 	// in the narrow layout.
 	narrowDetails bool
 	overlay       overlay
+	// picker is the file picker for sending a file to pickChat.
+	picker   filepicker.Model
+	pickChat string
 	palette       *commandPalette
 	notice        string
 	layout        layout
@@ -794,6 +799,9 @@ func (m *mainView) update(a *App, msg tea.Msg) tea.Cmd {
 	}
 
 	// Everything else, such as the filter's cursor, goes to the components.
+	if m.overlay == overlayAttach {
+		return m.pickerUpdate(a, msg)
+	}
 	var c1, c2 tea.Cmd
 	m.list, c1 = m.list.Update(msg)
 	m.composer, c2 = m.composer.Update(msg)
@@ -822,6 +830,8 @@ func (m *mainView) keyPress(a *App, msg tea.KeyPressMsg) tea.Cmd {
 		return cmd
 	case overlayAddContact:
 		return m.addContactKey(a, msg)
+	case overlayAttach:
+		return m.attachKey(a, msg)
 	case overlayNewGroup:
 		return m.groupKey(a, msg)
 	case overlayAddDevice, overlayApprovalCode:
@@ -873,6 +883,8 @@ func (m *mainView) keyPress(a *App, msg tea.KeyPressMsg) tea.Cmd {
 		return m.moveChat(a, -1)
 	case key.Matches(msg, k.AddContact):
 		return m.openAddContact(a, "")
+	case key.Matches(msg, k.Attach):
+		return m.openAttach(a)
 	}
 
 	if m.focus == focusComposer {
@@ -1086,6 +1098,8 @@ func (m *mainView) view(a *App) string {
 		return overlayOn(screen, m.signOutView(a), a.width, a.height)
 	case overlayAddContact:
 		return overlayOn(screen, m.addContactView(a), a.width, a.height)
+	case overlayAttach:
+		return overlayOn(screen, m.attachView(a), a.width, a.height)
 	case overlayInvite:
 		return overlayOn(screen, m.inviteView(a), a.width, a.height)
 	case overlayAddDevice:

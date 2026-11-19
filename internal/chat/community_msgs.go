@@ -790,11 +790,13 @@ func (e *Engine) applyChannel(ctx context.Context, cm *Community, g *CGroup, cha
 	}
 	switch c := content.(type) {
 	case Text:
-		m := Message{ID: c.ID, From: from, TS: am.TS, Received: received, Body: *c.Body, Reply: c.Reply, Status: Sent, Seq: seq}
+		m := Message{ID: c.ID, From: from, TS: am.TS, Received: received, Body: *c.Body, Reply: c.Reply, Status: Sent, Seq: seq, Files: attachments(c.Files)}
 		if c.Everyone && strings.Contains(" "+*c.Body+" ", " @everyone ") && st.Can(from, community.PermModerate) && st.SeesChannel(from, cch) {
 			m.Everyone = true
 		}
 		return e.addChannelMessage(ch, m, live)
+	case File:
+		return e.addChannelMessage(ch, Message{ID: c.ID, From: from, TS: am.TS, Received: received, Status: Sent, Seq: seq, Files: []Attachment{{Ref: *c.Ref}}}, live)
 	case Edit:
 		return e.changeMessage(ch, c.Target, func(m *Message) error {
 			if m.From != from {
@@ -812,7 +814,7 @@ func (e *Engine) applyChannel(ctx context.Context, cm *Community, g *CGroup, cha
 			if m.Seq > 0 && seq > 0 {
 				e.goneInLog(cm, channel, m.Seq, seq)
 			}
-			m.Body, m.Deleted, m.Reactions = "", true, nil
+			m.Body, m.Deleted, m.Reactions, m.Files = "", true, nil, nil
 			return nil
 		})
 	case React:
@@ -1374,7 +1376,7 @@ func (e *Engine) deleteChannel(ctx context.Context, ch *Chat, target string) err
 		e.goneInLog(cm, ch.Channel, msgs[i].Seq, seq)
 	}
 	return e.changeMessage(ch, target, func(m *Message) error {
-		m.Body, m.Deleted, m.Reactions = "", true, nil
+		m.Body, m.Deleted, m.Reactions, m.Files = "", true, nil, nil
 		return nil
 	})
 }

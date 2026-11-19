@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/rerouteholdings/railcar/internal/tieroute/client"
 	"github.com/rerouteholdings/railcar/internal/tieroute/identity"
 	"github.com/rerouteholdings/railcar/internal/tieroute/sig"
 	"github.com/rerouteholdings/railcar/internal/tieroute/wire"
@@ -67,6 +68,14 @@ type Text struct {
 	Receipt  bool             `json:"receipt,omitempty"`
 	Previews []jsontext.Value `json:"previews,omitempty"`
 	Files    []jsontext.Value `json:"files,omitempty"`
+}
+
+// File is a message that is one file (§12, §14).
+type File struct {
+	T   string           `json:"t"`
+	ID  string           `json:"id"`
+	TS  int64            `json:"ts"`
+	Ref *client.MediaRef `json:"ref"`
 }
 
 // Edit replaces a message's text (§12).
@@ -211,6 +220,21 @@ func parseContent(t string, raw jsontext.Value) (any, error) {
 		}
 		if c.Body == nil || !validMsgID(c.ID) {
 			return bad("needs id and body")
+		}
+		for _, f := range c.Files {
+			var r client.MediaRef
+			if err := wire.Unmarshal(f, &r); err != nil || r.Check() != nil {
+				return bad("a malformed media-ref in files")
+			}
+		}
+		return c, nil
+	case CFile:
+		var c File
+		if err := wire.Unmarshal(raw, &c); err != nil {
+			return bad(err.Error())
+		}
+		if !validMsgID(c.ID) || c.Ref == nil || c.Ref.Check() != nil {
+			return bad("needs id and a media-ref")
 		}
 		return c, nil
 	case CEdit:

@@ -84,7 +84,9 @@ func (e *Engine) applyContent(ctx context.Context, ch *Chat, from string, am App
 	}
 	switch c := c.(type) {
 	case Text:
-		return e.addMessage(ch, Message{ID: c.ID, From: from, TS: am.TS, Received: received, Body: *c.Body, Reply: c.Reply, AskedReceipt: c.Receipt, Status: Sent})
+		return e.addMessage(ch, Message{ID: c.ID, From: from, TS: am.TS, Received: received, Body: *c.Body, Reply: c.Reply, AskedReceipt: c.Receipt, Status: Sent, Files: attachments(c.Files)})
+	case File:
+		return e.addMessage(ch, Message{ID: c.ID, From: from, TS: am.TS, Received: received, Status: Sent, Files: []Attachment{{Ref: *c.Ref}}})
 	case Edit:
 		return e.changeMessage(ch, c.Target, func(m *Message) error {
 			if m.From != from {
@@ -98,7 +100,7 @@ func (e *Engine) applyContent(ctx context.Context, ch *Chat, from string, am App
 			if m.From != from {
 				return errors.New("chat: a delete from someone other than the author") // §12
 			}
-			m.Body, m.Deleted, m.Reactions = "", true, nil
+			m.Body, m.Deleted, m.Reactions, m.Files = "", true, nil, nil
 			return nil
 		})
 	case React:
@@ -118,15 +120,8 @@ func (e *Engine) applyContent(ctx context.Context, ch *Chat, from string, am App
 	case AddAnswer:
 		return e.applyAddAnswer(ctx, ch, from, c)
 	}
-	// Known content this version doesn't act on, such as files and calls,
-	// shows as a placeholder when it's a message of its own.
-	var withID struct {
-		ID string `json:"id"`
-	}
-	wire.Unmarshal(am.C, &withID)
-	if t == CFile && validMsgID(withID.ID) {
-		return e.addMessage(ch, Message{ID: withID.ID, From: from, TS: am.TS, Received: received, Unsupported: t, Status: Sent})
-	}
+	// Known content this version doesn't act on, such as calls, isn't a
+	// message of its own.
 	return nil
 }
 
@@ -305,7 +300,7 @@ func (e *Engine) Delete(ctx context.Context, chat, target string) error {
 	e.mu.Unlock()
 	return e.changeOwn(ctx, chat, target, func(now int64) any {
 		return Delete{T: CDelete, ID: newMsgID(), TS: now, Target: target}
-	}, func(m *Message) { m.Body, m.Deleted, m.Reactions = "", true, nil })
+	}, func(m *Message) { m.Body, m.Deleted, m.Reactions, m.Files = "", true, nil, nil })
 }
 
 func (e *Engine) changeOwn(ctx context.Context, chat, target string, content func(int64) any, apply func(*Message)) error {
