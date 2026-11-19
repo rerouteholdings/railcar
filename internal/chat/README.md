@@ -70,6 +70,7 @@ RAILCAR_REROUTE_CLI=../reroute-desktop/core/target/debug/reroute-cli \
 go test ./internal/chat -run E2E -v
 ```
 
-- `TestE2EInteropOneServer` and `TestE2EInteropTwoServers`: Railcar and Reroute become contacts on one homeserver, and across two federated ones. Reroute creates the direct chat; messages, a reply, edits, reactions, and a delete go both ways; Reroute replaces its message key and links a second device, and Railcar follows both commits; Reroute re-creates the chat, which stays one conversation. Then a second Reroute identity adds Railcar, and Railcar creates the direct chat.
+- `TestE2EInteropOneServer` and `TestE2EInteropTwoServers`: Railcar and Reroute become contacts on one homeserver, and across two federated ones. Reroute creates the direct chat; messages, a reply, edits, reactions, and a delete go both ways; Reroute replaces its message key and links a second device, and Railcar follows both commits; Reroute re-creates the chat, which stays one conversation. Then a second Reroute identity adds Railcar, and Railcar creates the direct chat, with itself as hub; Reroute commits there too, which works only when both derive the same epoch keys.
 - `TestE2EInteropDecline`: each side declines the other's request.
 - `TestE2ERailcar`: two Railcar identities on two servers, one on the live stream, with typing, a restart that reloads the history and MLS state, and messages after it.
+- `TestE2ERailcarMutual`: two Railcar identities send each other requests at once, and end up with one direct chat.
