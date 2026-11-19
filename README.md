@@ -2,7 +2,7 @@
 
 Railcar is a terminal client for Tieroute, the federated, end-to-end encrypted (E2EE) chat protocol. Reroute Holdings LLC writes it from the public Tieroute specification, separately from the Reroute app, so it doubles as a check that the specification is enough to build a working client from.
 
-Railcar is in early development. It has direct chats, group chats, and communities, and links devices, all working with Reroute, the Reroute Holdings LLC app. Files, presence, and backups come next. The plan and its progress are below.
+Railcar is in early development. It has direct chats, group chats, and communities, links devices with their history, and has files, profiles, presence, read receipts, backups, moves to another homeserver, and reports, all working with Reroute, the Reroute Holdings LLC app. Calls come next. The plan and its progress are below.
 
 ## What it is
 
@@ -21,8 +21,17 @@ Railcar is in early development. It has direct chats, group chats, and communiti
    - Communities on community servers: creating one, joining with a code, text channels with sequence numbers, roles, restricted channels, join codes, history for newcomers, read positions, deletes, timeouts, kicks, and bans. Voice channels are listed, and can't be joined from a terminal.
 
    Each works with Reroute's command-line client both ways.
-4. Files, presence, backups, and moving to another homeserver. For communities: joins that need approval, following a community that moves, re-creating stuck groups, and rotating the metadata key after a kick or ban.
-5. Calls, and packages.
+4. Everything else a chat needs. Done:
+   - Signing in with the recovery code; profiles and presence; files; read receipts, which ask before sending; and typing in community channels.
+   - History for a newly linked device, from Reroute or another Railcar.
+   - The message history backup, moving to another homeserver, and reports.
+   - Group pictures, moving a group's hub, and re-created groups that carry on the same chat.
+   - For communities: joins that need approval, following a community that moves, and new metadata and history keys after a kick or ban.
+   - Notifications for mentions and `@everyone`.
+   - The rules decided for direct chats, commits, restricted channels, and new communities.
+
+   Each works with Reroute's command-line client both ways, where it has the commands.
+5. Calls and voice channels, and packages.
 
 ## Build
 
@@ -40,7 +49,7 @@ That builds `tieroute-mls` first, then leaves `railcar` in the repository's root
 ./railcar
 ```
 
-The first time, Railcar asks for a homeserver, a handle, and the homeserver's registration code, and shows your 12 recovery words. Or choose **Sign in with another device** to use an identity you already have in Reroute or another copy of Railcar. Then press Ctrl+N to add a contact with their code, or type `:invite` to make a code to give someone. Type `:new-group` to start a group chat with some of your contacts, `:join` with a code to join a community, and `:create-community` to create one on a community server. Type `:add-device` to add a new device, and `:devices` to see yours. `./railcar --help` lists the options, such as `--profile` to keep more than one identity.
+The first time, Railcar asks for a homeserver, a handle, and the homeserver's registration code, and shows your 12 recovery words. Or choose **Sign in with another device** to use an identity you already have in Reroute or another copy of Railcar. Then press Ctrl+N to add a contact with their code, or type `:invite` to make a code to give someone. Type `:new-group` to start a group chat with some of your contacts, `:join` with a code to join a community, and `:create-community` to create one on a community server. Type `:add-device` to add a new device, and `:devices` to see yours. `:backup-on` turns on the encrypted message backup, and `:move` moves you to another homeserver. `./railcar --help` lists the options, such as `--profile` to keep more than one identity.
 
 Railcar keeps each profile's key in the system keychain. Without one, it stops, unless you run it with `--key-file`, which keeps the key in a file next to the data instead.
 

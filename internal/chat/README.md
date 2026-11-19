@@ -120,7 +120,8 @@ for ev := range eng.Events() { ... }
 - Communities in link bundles: Railcar sends none, and a linked device doesn't join the ones a bundle lists, so it joins each community again with a code (§7.2 step 5).
 - Moves signed with the recovery code, for an old home that's gone, and the recovery-signed entry that vouches for a move contacts' homeservers missed (§6.6).
 - Sending the moved chain inside group chats (§6.6, step 3): the spec doesn't say in what content. Members who aren't contacts learn of the move when they fetch the chain.
-- Rejoining after an inbox gap or an expired commit (§11.9), and re-creating a stuck chat (§11.11).
+- Rejoining after an inbox gap or an expired commit (§11.9), and re-creating a stuck direct chat (§11.11).
+- Calls, and voice channels (§15, §16.4): phase 5.
 - Checking a message against the sender's leaf in the epoch it was sent in, when the leaf changed since. Such a message is dropped for now.
 
 ## Tests
