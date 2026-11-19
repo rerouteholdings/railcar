@@ -73,6 +73,7 @@ type savedState struct {
 	Chain        []wire.Signed `json:"chain"`
 	Cursor       string        `json:"cursor,omitempty"`       // the last cursor this device acked
 	PendingWrap  *WrappedKey   `json:"pending_wrap,omitempty"` // a recovery wrap the homeserver hasn't taken yet
+	LinkKey      wire.Bytes    `json:"link_key,omitempty"`     // a linked device's HPKE private key, until its link bundle opens
 }
 
 // Client is a signed-up identity on this device. Its methods are safe for
@@ -336,43 +337,50 @@ func (c *Client) SignIn(ctx context.Context) error {
 		return err
 	}
 	c.mu.Lock()
-	id, server, name := c.state.ID, c.state.Server, c.device.Name
+	id, server := c.state.ID, c.state.Server
 	c.mu.Unlock()
+	a := *c.api
+	a.token = nil
+	res, err := signInDevice(ctx, &a, c.clock, id, server, c.device)
+	if wire.IsCode(err, wire.CodeNotAllowed) {
+		return ErrDeviceRemoved
+	}
+	if err != nil {
+		return err
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.state.Token, c.state.TokenExpires = res.Token, res.Expires
+	return c.saveLocked()
+}
+
+// signInDevice gets a nonce from auth/challenge, which also gives the
+// server's clock (§8.4), and trades the signed nonce for a session token
+// (§8.2). A device that isn't current gets not-allowed.
+func signInDevice(ctx context.Context, a *api, clock *Clock, id, server string, dev *identity.Device) (sessionRes, error) {
 	for attempt := 0; ; attempt++ {
 		var ch challengeRes
 		start := time.Now()
-		err := c.unauthed(ctx, http.MethodPost, "auth/challenge", nil, challengeReq{ID: id, Key: c.device.ID()}, &ch)
+		err := a.call(ctx, http.MethodPost, "auth/challenge", nil, challengeReq{ID: id, Key: dev.ID()}, &ch)
 		end := time.Now()
-		if wire.IsCode(err, wire.CodeNotAllowed) {
-			return ErrDeviceRemoved
-		}
 		if err != nil {
-			return err
+			return sessionRes{}, err
 		}
 		if ch.Now > 0 {
-			c.clock.observe(time.Unix(ch.Now, 0), start, end)
+			clock.observe(time.Unix(ch.Now, 0), start, end)
 		}
-		auth, err := sig.SignDevice(c.device.Key, identity.TypeAuth, AuthBody{
-			ID: id, Nonce: ch.Nonce, Server: server, TS: c.clock.Now().Unix(), Name: name,
+		auth, err := sig.SignDevice(dev.Key, identity.TypeAuth, AuthBody{
+			ID: id, Nonce: ch.Nonce, Server: server, TS: clock.Now().Unix(), Name: dev.Name,
 		})
 		if err != nil {
-			return err
+			return sessionRes{}, err
 		}
 		var res sessionRes
-		err = c.unauthed(ctx, http.MethodPost, "auth/session", nil, sessionReq{Auth: auth}, &res)
+		err = a.call(ctx, http.MethodPost, "auth/session", nil, sessionReq{Auth: auth}, &res)
 		if wire.IsCode(err, wire.CodeClockSkew) && attempt == 0 {
 			continue // the error corrected the clock; start over with a new nonce
 		}
-		if wire.IsCode(err, wire.CodeNotAllowed) {
-			return ErrDeviceRemoved
-		}
-		if err != nil {
-			return err
-		}
-		c.mu.Lock()
-		defer c.mu.Unlock()
-		c.state.Token, c.state.TokenExpires = res.Token, res.Expires
-		return c.saveLocked()
+		return res, err
 	}
 }
 
