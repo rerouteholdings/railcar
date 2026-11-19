@@ -1,6 +1,6 @@
 # Railcar's chat layer
 
-This page describes `internal/chat`, the part of Railcar that turns the protocol client into contacts and direct chats. It's for anyone working on Railcar who needs to know which Tieroute rules it follows for chats, and where they live. Section references (§) are to the public Tieroute specification.
+This page describes `internal/chat`, the part of Railcar that turns the protocol client into contacts, direct chats, group chats, and communities. It's for anyone working on Railcar who needs to know which Tieroute rules it follows for chats, and where they live. Section references (§) are to the public Tieroute specification.
 
 The package sits between `internal/tieroute/client`, which talks to the homeserver, and the interface. `internal/app` connects it to the interface's `Backend`. The MLS library, `internal/mls`, does MLS only: every Tieroute rule about groups and messages is here.
 
@@ -15,6 +15,8 @@ The package sits between `internal/tieroute/client`, which talks to the homeserv
 - System lines: a line in the chat when someone's devices change, such as "@kat has a new device" (§11.9).
 - Messages (§12): text, replies, edits, deletes, reactions, typing indicators, and incoming read receipts. Unknown content shows as an "unsupported message" placeholder, and malformed known content is dropped.
 - A direct chat re-created between the same two people stays one conversation: its history moves to the new group (§11.11).
+- Group chats (§11.5 to §11.8): creating a group with some contacts, with this homeserver as hub and this identity as first admin; adding people directly as an admin, or by an `add-request` an admin answers with a signed approval, after which the member who asked commits the Add; removing people; granting and revoking admin; leaving, where the last admin first hands admin to the longest-standing member; and `group-meta` for the name and topic, sent again after every Add so new members and devices learn them. A member's leave proposal is committed at once, since OpenMLS sends nothing while one waits (§11.1).
+- Communities (§16): see below.
 
 ## Checks it makes
 
@@ -28,10 +30,44 @@ The package sits between `internal/tieroute/client`, which talks to the homeserv
 | Link bundles | Opened only with this device's one-time HPKE key, for its own identifier, and only from the identity itself | §7.2 |
 | App-messages | The signature by the sender's leaf key, that key's `msg-key`, the sender's identity and the group, no `channel`, and edits and deletes only by the author | §3.2.3, §12 |
 | Hub forks | A second commit with a valid receipt for an epoch this device already applied stops the chat | §11.6 |
+| Group chat commits | Only admins change `admins` or `hub`, and remove other people; a non-admin's Add of a new person carries an approval that §11.8's checks pass, and puts its request in `used`; `since` gives new people the epoch the commit creates; admins are members, and a group always keeps one; at most 25 people and 250 leaves; a leave proposal committed by reference is the device leaving, not the committer removing it | §7.1, §11.1, §11.8, §11.10 |
 
 A refused commit stops the chat: Railcar sends nothing to it again (§7.1). A commit whose history Railcar can't get yet is pending: it waits, and nothing is sent to the chat until it's decided.
 
 Groups that haven't latched, such as the direct chats Reroute creates today, have no `heads`. For those, a commit's added leaves and committer are judged on this device's fresh copies of the chains instead.
+
+## Communities
+
+A community lives on a community server, which is the hub for its groups and its delivery point (§16.1). Railcar connects to each community server directly, with a stream of its own, and keeps:
+
+- the community chain, checked entry by entry in §16.2.2's order by `internal/tieroute/community`, with the state after each entry, so a commit is judged by the entry its `community_head` names and not by later ones (§16.2);
+- the members group, and the group of each restricted channel's see list this identity's roles see (§16.5);
+- the metadata keys and history keys that `community-keys` brought, which open channel and role names (§16.2.4) and history segments (§16.5);
+- each text channel's messages with their sequence numbers, and the signed app-messages, to build history segments from.
+
+What it does:
+
+- Creating a community: the create entry, the members group at epoch 0 with `community_head`, and a `#general` text channel that keeps history. After every chain entry it appends, Railcar commits the new `community_head` to the members group, as Reroute does, so code joins are judged with the codes the chain holds.
+- Joining with a code (§16.6): it checks the chain and the code, and the GroupInfo and tree the community server serves, builds the external commit, and signs the join proof and the commit-request with the code's key. Until a member sends the keys, channels show without names.
+- When someone joins, the member with the lowest leaf index uploads what has built up past the last segment, then sends the keys, after 0 to 2 s; anyone else does after 10 s if nobody has (§16.5, §16.6).
+- Channel messages, replies, edits, reactions, and deletes, which a moderator who outranks the author can make too, with `POST messages/delete` after the signed delete (§16.7). A timed-out member's messages are dropped.
+- History: reading segments with each history key until one opens them, checking every line, and verifying every message as imported history (§16.5, §7.3); uploading segments that start at the first number this device holds and never overlap a stored one; asking for missing numbers with `history-request`, and answering requests.
+- Roles, codes, and restricted channels: adding roles ranked just below this identity, assigning them, then adding the member to the restricted groups their roles see now and removing them from the others, with new keys for those groups. A restricted group is pinned at its first commit when every leaf lists `0xF0A4` (§16.5).
+- Read positions: sent when a channel is read, and taken from the community server every 30 seconds when they're ahead (§16.4).
+- Moderation: timeouts, kicks, and bans, with Removes of the member's leaves in every group this device is in.
+- Voice channels are listed with who's in them, from `voice-state`. Railcar can't join them.
+
+| What | Checks | Section |
+|---|---|---|
+| Community chain | Form, place, signature by a device the signer's chain added at some point, time, authority on the state before the entry, and each op's rules | §16.2.2, §16.2.3 |
+| Community commits | The community server's receipt; `community_head` in the members group, and never going back in a pinned group; judged by the chain as of that entry | §16.2, §16.5 |
+| Code joins | The join proof for this joiner, epoch, and commit; a live code as of the named entry, counting the joins this device saw; its creator a member; the joiner not banned; at most 1,000 members | §16.6 |
+| Adds and Removes | A new member added only by someone with `moderate`, or in a pinned restricted group only with a role that sees it; Removes by leave, kick by someone who outranks, a ban, lost sight of the channel, or a removed device | §16.5, §16.7 |
+| Leaves | The device appears in its identity's chain at some point, and its `msg-key` checks out | §16.5 |
+| Channel messages | The channel matches the delivery's, and the group carries it | §12 |
+| History lines | §16.5's line checks, then each message's signature, `msg-key`, and certifying device | §16.5, §7.3 |
+
+A refused commit stops the community: Railcar sends nothing to it again.
 
 ## State
 
@@ -58,7 +94,11 @@ for ev := range eng.Events() { ... }
 
 ## Not yet
 
-- Group chats and communities, which come next. Leaving a chat, removing a contact, and blocking come with them.
+- Removing a contact, and blocking.
+- Re-creating a group chat, and linking a Welcome's `replaces` to the old chat: a re-created group shows as a separate chat (§11.11).
+- Moving a group's hub (§11.11).
+- Community joins that need approval, following a community's move, re-creating a community's groups, and rotating the community metadata key after a kick or ban (§16.5, §16.6, §16.7).
+- The fork rule for community chains: Railcar follows the community server's chain, and stops at an entry it refuses.
 - Latching a group that hasn't latched when nothing else changes (§7.1). A device change latches it.
 - History in link bundles (§7.3): Railcar sends none, and doesn't import Reroute's yet, so a new device starts with an empty history in each chat.
 - Sending read receipts, which needs the reader's consent (§13.3). Railcar never asks for them, and shows the ones it receives.
@@ -84,3 +124,9 @@ go test ./internal/chat -run E2E -v
 - `TestE2EInteropLinkFromReroute`: a Reroute identity with a chat approves Railcar as a new device, by Railcar's link code and a typed confirmation code, then a second Railcar by an approval code Reroute shows. Each gets the chat and messages go both ways with the contact on another homeserver.
 - `TestE2EInteropLinkToReroute`: Railcar approves a new Reroute device by its link code, and another by an approval code Railcar shows, adds each to the chat, then removes the first; the Reroute contact follows every change.
 - `TestE2ERailcarLink`: the same between Railcar devices, with a wrong confirmation code, an approval code two devices use, and the contact's system lines.
+- `TestE2EInteropGroups`: Railcar and Reroute across two homeservers. Railcar creates a group, adds a member as admin, and makes Reroute an admin, who removes someone. Reroute creates a group; Railcar, not an admin, asks to add someone, Reroute approves, and Railcar's commit with the approval passes Reroute's checks. The other way, Reroute asks and Railcar approves. Renames both ways, then each side leaves and the other commits it.
+- `TestE2ERailcarGroups`: the same between Railcar identities, with the last admin leaving and admin passing to the longest-standing member.
+- `TestE2EInteropCommunities`: Reroute creates a community, and Railcar joins with a code, gets the keys, reads earlier messages from Reroute's history segment, and messages go both ways with sequence numbers. Railcar creates a community, and Reroute joins with a Railcar code, gets Railcar's keys, and reads Railcar's segment. Railcar adds a role and a restricted channel only it sees, and Reroute, given the role, reads it.
+- `TestE2ERailcarCommunities`: between Railcar identities, with a late joiner reading history, a moderator's delete, read positions, a timeout, and a kick.
+
+The community tests run rerouted with community server names, which `testnet.StartWith` sets up, and give reroute-cli their origins in `REROUTE_COMMUNITY_URLS`. Set `RAILCAR_E2E_LOGS` to see the servers' logs and Railcar's own.

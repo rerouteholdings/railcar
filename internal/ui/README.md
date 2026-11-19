@@ -16,10 +16,11 @@ go run ./cmd/railcar --demo
    - Signing in with another device (§7.2) offers two ways. **Show a code here for the other device to approve** asks for the handle and homeserver, then shows the link code as a QR code, drawn with half-block characters, and as text, with a field for the confirmation code the other device shows. **Enter an approval code from the other device** takes an approval code instead (§7.2.1). Either way, Railcar tries to sign in every 2 seconds until the other device has added it, then opens the main view, where the chats arrive as the other devices add this one.
    - Signing in with the recovery code asks for the handle and the 12 words. It comes in a later version.
 2. The main view. It has three panes and a status bar:
-   - The chat list, newest activity first, with unread counts. Press / to find a chat by its title or a member's name or handle. Contact requests are in the list too: someone else's, until it's accepted or declined, and the identity's own, until the chat starts.
+   - The chat list: direct chats, group chats, and contact requests, newest activity first, then each community under a heading, with its channels in their order: `#` for text channels, and a speaker for voice channels, with how many people are in them. Enter on a heading folds the community's channels away. Unread counts show on each chat, and on a folded community. Press / to find a chat by its title or a member's name or handle. Contact requests are in the list too: someone else's, until it's accepted or declined, and the identity's own, until the chat starts.
    - The open chat. Messages are grouped by day, and by sender within a day, with a time on each group. Replies show the message they answer, edited messages say so, deleted ones say **Message deleted**, and reactions show under the message with their counts. The line under the chat's title says who's typing. Lines Railcar shows on its own, such as "@kat has a new device", are centered, without a sender (§11.9). Below the messages is the composer.
    - An open contact request shows who it's from, with a to accept it and d to decline it.
-   - The details pane, opened with Ctrl+O. It lists the chat's members and handles.
+   - The details pane, opened with Ctrl+O. It lists the chat's members and handles, a group chat's admins and topic and the add-requests waiting for an admin, and a channel's community and its members' roles.
+   - A voice channel shows who's in it, and says that Railcar can't join voice channels.
    - The status bar shows the identity's handle, its homeserver, and the stream's state: **Connected**, **Connecting** or **Reconnecting** with a spinner, or **Offline**.
 
    Under 80 columns, the main view shows one pane at a time: the chat list, the open chat, or its details.
@@ -29,6 +30,10 @@ go run ./cmd/railcar --demo
    - `:add-device` opens **Add a device**, which takes a new device's link code and a name for it. It then shows the warning §7.2 requires and the confirmation code to type on the new device, and waits for it. `:add-device link-…` fills in the code.
    - `:approval-code` opens **Show an approval code**: the warning first, then the code as a QR code and as text, for 10 minutes and one device (§7.2.1).
    - `:devices` opens **Your devices**: each device's name and the date it was added. d removes the selected one, after asking, and a adds one.
+   - `:new-group` opens **New group chat**: a name, then the contacts to put in it, chosen with Space (§11.5).
+   - In a group chat: `:add-member @handle` adds someone, directly as an admin, or by asking the admins otherwise; `:approve` and `:decline-add` answer the oldest add-request; `:remove-member`, `:make-admin`, and `:revoke-admin` take a handle; `:rename` and `:topic` take the text; and `:leave` leaves (§11.7, §11.8).
+   - `:create-community` opens **Create a community**: the community server, a name, and the server's creation code. `:join` followed by a code joins one (§16.6).
+   - In a channel: `:code` makes a join code and copies it; `:history` reads the channel's history; `:add-channel` and `:add-voice-channel` take a name; `:add-role Name talk moderate` adds a role; `:give-role @handle Name` assigns one; `:kick`, `:ban`, and `:timeout @handle minutes` moderate; and `:leave-community` leaves.
    - `:reply`, `:edit`, `:delete`, and `:react` act on the latest message: someone else's for replying and reacting, the identity's own for editing and deleting. `:react 🎉` picks the emoji; it's 👍 otherwise, and reacting again with the same emoji takes it back.
 
 The mouse works too: click a chat to open it, click a pane to move to it, and scroll the messages or the chat list.
@@ -87,12 +92,15 @@ The interface reaches the protocol only through `Backend`, in `backend.go`. It c
 | `MakeInvite` | Makes an invite code, as `@handle::code` |
 | `AddContact` | Sends a contact request with someone's code |
 | `AcceptRequest`, `DeclineRequest` | Answer a contact request; accepting starts the direct chat |
+| `Contacts` | Lists the contacts, for choosing who goes in a group chat |
+| `CreateGroup` | Creates a group chat with some contacts, by handle |
+| `Act` | Runs an `Action` on a group chat or a community, such as `add-member`, `join-community`, or `kick`, and returns a line to show |
 | `SignOut` | Removes the identity from this device |
 | `Close` | Stops the stream and closes `Events` |
 
 Typing indicators follow §13.3: the composer sends one at most once a second while you type, and a stop after 7 seconds without a keystroke or when you send. Someone else's disappears after 10 seconds without news.
 
-`DemoBackend`, in `demo.go` and `demo_contacts.go`, implements it with made-up chats. A contact added in the demo accepts a few seconds later. `railcar --demo` runs it live, with a short wait to connect, a dropped connection every few minutes, and replies in direct chats. The tests run it with a fixed clock and no waits.
+`DemoBackend`, in `demo.go`, `demo_contacts.go`, and `demo_groups.go`, implements it with made-up chats and a community, Night shift, with two text channels and a voice channel. A contact added in the demo accepts a few seconds later. `railcar --demo` runs it live, with a short wait to connect, a dropped connection every few minutes, and replies in direct chats. The tests run it with a fixed clock and no waits.
 
 ## Tests
 

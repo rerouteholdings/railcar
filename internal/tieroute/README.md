@@ -12,6 +12,7 @@ This page describes `internal/tieroute`, the part of Railcar that speaks the Tie
 | `codes` | Contact verification codes (§6.7), confirmation codes and approval tags for linking devices (§7.2, §7.2.1), and the keys of community join codes (§16.6) |
 | `discovery` | Server documents and their API base URLs (§5.1, §8.1), and handle records over HTTPS and DNS (§5.3) |
 | `store` | The profile directory: records encrypted at rest under a key in the system keychain |
+| `community` | Community chains and their validation, with the state after each entry (§16.2); sealed names (§16.2.4); join proofs and code liveness (§16.6); and history segments: encrypting, building, and reading them (§16.5) |
 | `client` | Signing up, signing in, linking devices, chains, handles, key packages, the inbox, and the live stream |
 
 ## The client API
@@ -48,6 +49,8 @@ Other calls:
 - `c.CreateGroup`, `c.RegisterGroup`, `c.UnregisterGroup`, `c.FetchCommits`, and `c.RegisterEpochKey` are the group calls (§11.5, §11.6). `Outgoing.Welcomes` sends Welcomes with a commit, delivered only if the hub accepts it.
 - `c.VerifyServerSigned(ctx, server, s)` checks an object a server signed, such as a hub's commit receipt. Documents of servers other than the homeserver come through the homeserver (`GET servers/{name}`), so those servers don't learn the device's address.
 - `c.Profile()` is the profile, where other parts of Railcar keep their own records.
+- `c.SignAsDevice(t, body)` signs an object with this device's composite key, such as an add approval (§11.8) or a community chain entry (§16.2).
+- `c.Community(server)` is this device's connection to a community server (§16.1): it fetches the server's document there directly, signs in with the device's key and the identity's homeserver (§16.6 step 3), and calls the community server API, from `Preview`, `Create`, `Chain`, `Append`, and `Join` to `Send`, `Inbox`, `Stream`, the history segment calls, read positions, and `Kick`. Its stream reports voice signaling as `EventVoice`.
 - `c.Clock()` is the homeserver's time. Warn the user when `Skew()` is over a minute (§8.4).
 - `c.Warning()` is a warning to show about the profile, such as a key stored in a file.
 
@@ -101,7 +104,7 @@ Servers on a local test network are reached through `Options.Origins`, which map
 
 ## Tests
 
-The shared test vectors are copied into `testdata/vectors`. `go test ./internal/tieroute/...` checks every wire version 2 vector this part of Railcar covers: `composite`, `signed`, `msgkey`, `recovery`, `chain`, `fork`, `vouch`, `basis`, `s2s`, `codes`, `code`, and `link`, plus `ed25519.json`, `account.json`, and `link.json` (the short link code and confirmation-code normalization) from version 1, which still hold. The vectors don't cover link bundles or approval tags yet, so those are tested against reroute-cli. When the vectors change, copy them here again.
+The shared test vectors are copied into `testdata/vectors`. `go test ./internal/tieroute/...` checks every wire version 2 vector this part of Railcar covers: `composite`, `signed`, `msgkey`, `recovery`, `chain`, `fork`, `vouch`, `basis`, `s2s`, `codes`, `code`, and `link`, plus `ed25519.json`, `account.json`, and `link.json` (the short link code and confirmation-code normalization) from version 1, which still hold. `go test ./internal/tieroute/community` checks `community-history.json` and `code.json`, and chain validation cases of its own. The vectors don't cover link bundles, approval tags, or community chains yet, so those are tested against reroute-cli. When the vectors change, copy them here again.
 
 The end-to-end test runs against a real rerouted, and is skipped unless `RAILCAR_REROUTED` names a rerouted binary:
 
