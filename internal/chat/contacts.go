@@ -42,6 +42,18 @@ func (e *Engine) Add(ctx context.Context, code string) (Contact, error) {
 	if err != nil {
 		return Contact{}, err
 	}
+	e.mu.Lock()
+	known := e.st.Contacts[r.ID]
+	e.mu.Unlock()
+	if known != nil && known.State == StatePendingIn {
+		// They asked first: adding them is accepting.
+		if _, err := e.Accept(ctx, r.ID); err != nil {
+			return Contact{}, err
+		}
+		e.mu.Lock()
+		defer e.mu.Unlock()
+		return *e.st.Contacts[r.ID], nil
+	}
 	if _, err := e.c.RequestContact(ctx, r.ID, ic.Code); err != nil {
 		return Contact{}, err
 	}
