@@ -51,6 +51,8 @@ Other calls:
 - `c.Profile()` is the profile, where other parts of Railcar keep their own records.
 - `c.SignAsDevice(t, body)` signs an object with this device's composite key, such as an add approval (§11.8) or a community chain entry (§16.2).
 - `c.Community(server)` is this device's connection to a community server (§16.1): it fetches the server's document there directly, signs in with the device's key and the identity's homeserver (§16.6 step 3), and calls the community server API, from `Preview`, `Create`, `Chain`, `Append`, and `Join` to `Send`, `Inbox`, `Stream`, the history segment calls, read positions, and `Kick`. Its stream reports voice signaling as `EventVoice`.
+- `c.SetPresence(ctx, state, status)` sets the presence state and status message (§13.2), and `client.ParsePresence` reads the stream's presence frames, which arrive as `EventPresence`. `c.PublishProfile(ctx, p)` signs and publishes the profile with the next `v`, and `c.FetchProfile(ctx, id)` fetches one and checks that a current device of the identity signed it (§13.1); `client.ErrNoProfile` means there's none.
+- `c.UploadFile(ctx, data, name, mime)` encrypts a file with a new key and uploads it, and returns its `MediaRef`; `c.DownloadFile(ctx, ref)` fetches one through the homeserver, checks its hash, and decrypts it (§14). `client.ErrFileExpired` and `client.ErrFileRemoved` are the `410` answers. `c.UploadPublic` and `c.DownloadPublic` are the same for profile pictures, which aren't encrypted.
 - `c.Clock()` is the homeserver's time. Warn the user when `Skew()` is over a minute (§8.4).
 - `c.Warning()` is a warning to show about the profile, such as a key stored in a file.
 
