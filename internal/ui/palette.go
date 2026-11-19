@@ -73,6 +73,8 @@ func newCommandPalette(a *App, m *mainView) *commandPalette {
 		{label: "Delete your last message", names: []string{"delete"}, run: func(a *App) tea.Cmd { return a.main.deleteLast(a) }},
 		{label: "React to the last message", names: []string{"react"}, run: func(a *App) tea.Cmd { return a.main.reactLast(a, "") },
 			withArg: func(a *App, emoji string) tea.Cmd { return a.main.reactLast(a, emoji) }},
+		{label: "Report the last message from someone else", names: []string{"report"}, run: func(a *App) tea.Cmd { return a.main.openReport(a, "") },
+			withArg: func(a *App, reason string) tea.Cmd { return a.main.openReport(a, reason) }},
 		{label: "Show keys and help", names: []string{"help", "h"}, run: func(a *App) tea.Cmd { a.main.overlay = overlayHelp; return nil }},
 		{label: "Sign out", names: []string{"sign-out", "signout"}, run: func(a *App) tea.Cmd { a.main.overlay = overlaySignOut; return nil }},
 		{label: "Quit Railcar", names: []string{"quit", "q"}, run: func(*App) tea.Cmd { return tea.Quit }},

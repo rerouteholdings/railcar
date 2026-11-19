@@ -45,6 +45,7 @@ const (
 	overlayNewGroup
 	overlayAttach
 	overlayReceipts
+	overlayReport
 )
 
 // narrowWidth is the width under which the main view shows one pane at a
@@ -128,6 +129,9 @@ type mainView struct {
 	// receiptAsked holds the chats whose read receipt question this run
 	// showed, so it shows once (§13.3).
 	receiptAsked map[string]bool
+
+	// report is the report waiting for the user to confirm it.
+	report reportState
 
 	// follow is the handle of a contact request that was open when it left
 	// the list. Their direct chat opens when it arrives.
@@ -854,6 +858,8 @@ func (m *mainView) keyPress(a *App, msg tea.KeyPressMsg) tea.Cmd {
 		return nil
 	case overlayReceipts:
 		return m.receiptsKey(a, msg)
+	case overlayReport:
+		return m.reportKey(a, msg)
 	case overlaySignOut:
 		switch msg.String() {
 		case "enter", "y":
@@ -1109,6 +1115,8 @@ func (m *mainView) view(a *App) string {
 		return overlayOn(screen, m.signOutView(a), a.width, a.height)
 	case overlayReceipts:
 		return overlayOn(screen, m.receiptsView(a), a.width, a.height)
+	case overlayReport:
+		return overlayOn(screen, m.reportView(a), a.width, a.height)
 	case overlayAddContact:
 		return overlayOn(screen, m.addContactView(a), a.width, a.height)
 	case overlayAttach:

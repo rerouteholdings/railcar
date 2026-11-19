@@ -181,6 +181,8 @@ type Backend interface {
 //     auto-away (Arg: on or off).
 //   - Files (§14): attach (Arg: a path), and save (Arg: a folder, or
 //     empty for the default), which saves the latest attachments.
+//   - Reports (§17.2): report (Arg: the reason, Arg2: a message's ID,
+//     Arg3: forward to also send it to the sender's homeserver).
 //   - Read receipts (§13.3): read-receipts, whether to send them in the
 //     open chat, and ask-receipts, whether your messages ask for them
 //     (Arg: on or off).

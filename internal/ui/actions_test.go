@@ -171,3 +171,20 @@ func TestReadReceiptQuestion(t *testing.T) {
 		t.Fatal("the question came back")
 	}
 }
+
+func TestReportShowsWhatGoes(t *testing.T) {
+	a, b := started(t, 120, 40)
+	drive(a, b, a.main.openChat(a, "ravi", false))
+	runCommand(a, b, "report spam")
+	if a.main.overlay != overlayReport {
+		t.Fatal("the report box didn't open")
+	}
+	out := plain(a)
+	if !strings.Contains(out, "Report this message from Ravi") || !strings.Contains(out, "Can you check that the trailhead is open?") || !strings.Contains(out, "Reason: spam") {
+		t.Fatalf("the report box:\n%s", out)
+	}
+	send(a, b, tea.KeyPressMsg{Code: tea.KeyEnter})
+	if a.main.overlay != overlayNone {
+		t.Fatal("the box stayed")
+	}
+}

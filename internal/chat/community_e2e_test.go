@@ -277,6 +277,11 @@ func TestE2ERailcarCommunities(t *testing.T) {
 		return hasChannel(lee, "c.test", "general") && slices.Contains(lee.bodies(gen.ID), "1:one") && slices.Contains(lee.bodies(gen.ID), "4:from ravi")
 	})
 
+	// Lee reports one of Ravi's messages to the moderators (§17.3).
+	if err := lee.e.Report(ctx, gen.ID, []string{lee.find(gen.ID, "from ravi").ID}, "a test report", false); err != nil {
+		t.Fatal(err)
+	}
+
 	// The owner deletes Ravi's message; everyone sees it deleted.
 	if err := kat.e.Delete(ctx, gen.ID, rm.ID); err != nil {
 		t.Fatal(err)

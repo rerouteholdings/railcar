@@ -197,6 +197,14 @@ func interop(t *testing.T, katServer, raviServer string) {
 	settle()
 	kat.sync()
 	fromRavi := kat.find(ch.ID, "hello Kat, from Reroute")
+	// A report of Reroute's message passes the homeserver's shape check,
+	// and is forwarded to Ravi's home (§17.2, §17.3).
+	if err := kat.e.Report(ctx, ch.ID, []string{fromRavi.ID}, "a test report", true); err != nil {
+		t.Fatal(err)
+	}
+	if err := kat.e.Report(ctx, ch.ID, []string{kat.find(ch.ID, "hello Ravi, from Railcar").ID}, "my own", false); err == nil {
+		t.Error("Kat reported her own message")
+	}
 
 	// Ravi edits his message and reacts to Kat's; Kat sees both.
 	hist := ravi.run("history", katHandle)

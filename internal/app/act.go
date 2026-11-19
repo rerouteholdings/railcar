@@ -125,6 +125,12 @@ func act(ctx context.Context, eng *chat.Engine, chatID string, a ui.Action) (str
 	if msg, ok, err := actReceipts(ctx, eng, chatID, a); ok {
 		return msg, err
 	}
+	if a.Kind == "report" {
+		if err := eng.Report(ctx, chatID, []string{a.Arg2}, a.Arg, a.Arg3 == "forward"); err != nil {
+			return "", err
+		}
+		return "Reported", nil
+	}
 	c, _ := eng.Chat(chatID)
 	server := c.Community
 	who := func() (string, error) {
