@@ -522,3 +522,37 @@ func TestE2EInteropDecline(t *testing.T) {
 		t.Error("Max's app didn't say Kat declined")
 	}
 }
+
+// TestE2ERailcarMutual has two identities send each other requests before
+// either sees the other's: they become contacts, and the one whose
+// identifier sorts first creates the one direct chat (§9.2).
+func TestE2ERailcarMutual(t *testing.T) {
+	bin := testnet.Rerouted(t)
+	o := testnet.Start(t, bin, "a.test")
+	ctx := context.Background()
+	kat := newRailcar(t, o, "a.test", "kat")
+	ravi := newRailcar(t, o, "a.test", "ravi")
+	katCode, _ := kat.e.Invite(ctx)
+	raviCode, _ := ravi.e.Invite(ctx)
+	if _, err := kat.e.Add(ctx, raviCode); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ravi.e.Add(ctx, katCode); err != nil {
+		t.Fatal(err)
+	}
+	for range 3 {
+		settle()
+		kat.sync()
+		ravi.sync()
+	}
+	k, r := kat.chatWith("ravi.a.test"), ravi.chatWith("kat.a.test")
+	if k.ID != r.ID {
+		t.Fatalf("two chats: %s and %s", k.ID, r.ID)
+	}
+	if _, err := kat.e.SendText(ctx, k.ID, "one chat", ""); err != nil {
+		t.Fatal(err)
+	}
+	settle()
+	ravi.sync()
+	ravi.find(r.ID, "one chat")
+}
