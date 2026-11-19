@@ -22,6 +22,7 @@ import (
 	"time"
 
 	"github.com/rerouteholdings/railcar/internal/tieroute/client"
+	"github.com/rerouteholdings/railcar/internal/tieroute/community"
 	"github.com/rerouteholdings/railcar/internal/tieroute/store"
 )
 
@@ -92,6 +93,16 @@ type Engine struct {
 	// its home.
 	fresh map[string]time.Time
 
+	// cchains are the communities' checked chains, by community server.
+	cchains map[string]*community.Chain
+	// runCtx is Run's context, for streams of communities joined later.
+	runCtx context.Context
+	// joinCode is the code a join is using, by community server, for
+	// code access before this identity is a member.
+	joinCode map[string][]byte
+	crunMu   sync.Mutex
+	cruns    map[string]bool
+
 	evMu   sync.Mutex
 	events chan Event
 	closed bool
@@ -119,11 +130,14 @@ func New(c *client.Client, opts Options) (*Engine, error) {
 	}
 	return &Engine{
 		c: c, dev: dev, log: log, st: st,
-		key:    ed25519.NewKeyFromSeed(info.MsgKeySeed),
-		leaves: map[string]bool{},
-		seen:   map[string]bool{},
-		fresh:  map[string]time.Time{},
-		events: make(chan Event, 256),
+		key:      ed25519.NewKeyFromSeed(info.MsgKeySeed),
+		leaves:   map[string]bool{},
+		seen:     map[string]bool{},
+		fresh:    map[string]time.Time{},
+		cchains:  map[string]*community.Chain{},
+		cruns:    map[string]bool{},
+		joinCode: map[string][]byte{},
+		events:   make(chan Event, 256),
 	}, nil
 }
 
@@ -197,6 +211,7 @@ func (e *Engine) Run(ctx context.Context) error {
 	e.mu.Lock()
 	e.wantSync()
 	e.mu.Unlock()
+	e.runCommunities(ctx)
 	events := e.c.Stream(ctx, client.StreamOptions{})
 	tick := time.NewTicker(syncEvery)
 	defer tick.Stop()
@@ -233,6 +248,13 @@ func (e *Engine) Run(ctx context.Context) error {
 // Sync fetches and processes every inbox item waiting, without the
 // stream. It's for tests and one-shot tools.
 func (e *Engine) Sync(ctx context.Context) error {
+	if err := e.syncHome(ctx); err != nil {
+		return err
+	}
+	return e.syncCommunities(ctx)
+}
+
+func (e *Engine) syncHome(ctx context.Context) error {
 	for range 1000 {
 		page, err := e.c.Inbox(ctx, e.c.Cursor(), 0)
 		if err != nil {
@@ -366,6 +388,7 @@ func (c *Chat) public() Chat {
 	p.Applied = maps.Clone(c.Applied)
 	p.Admins = slices.Clone(c.Admins)
 	p.Requests = slices.Clone(c.Requests)
+	p.InVoice = slices.Clone(c.InVoice)
 	p.Buffered = nil
 	return p
 }
@@ -401,6 +424,9 @@ func (e *Engine) MarkRead(chat string) error {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	c, ok := e.st.Chats[chat]
+	if ok && c.Kind == KindChannel {
+		e.markChannelRead(context.Background(), c)
+	}
 	if !ok || c.Unread == 0 {
 		return nil
 	}

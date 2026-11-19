@@ -140,7 +140,7 @@ func (e *Engine) catchUpGroups(ctx context.Context) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	for _, ch := range e.st.Chats {
-		if ch.Stopped != "" {
+		if ch.Stopped != "" || ch.Kind == KindChannel || ch.Left {
 			continue
 		}
 		e.fetchMissed(ctx, ch)

@@ -2,6 +2,7 @@ package chat
 
 import (
 	"context"
+	"log/slog"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -30,6 +31,7 @@ type rerouteCLI struct {
 	t       *testing.T
 	bin     string
 	profile string
+	env     []string
 }
 
 func newRerouteCLI(t *testing.T, name string) *rerouteCLI {
@@ -45,7 +47,9 @@ func (r *rerouteCLI) run(args ...string) string {
 	r.t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()
-	out, err := exec.CommandContext(ctx, r.bin, append([]string{"--profile", r.profile}, args...)...).CombinedOutput()
+	cmd := exec.CommandContext(ctx, r.bin, append([]string{"--profile", r.profile}, args...)...)
+	cmd.Env = append(os.Environ(), r.env...)
+	out, err := cmd.CombinedOutput()
 	r.t.Logf("$ reroute-cli %s\n%s", strings.Join(args, " "), out)
 	if err != nil {
 		r.t.Fatalf("reroute-cli %s: %v", args[0], err)
@@ -71,7 +75,11 @@ func newRailcar(t *testing.T, origins map[string]string, server, handle string) 
 	if err != nil {
 		t.Fatal(err)
 	}
-	e, err := New(c, Options{})
+	opts := Options{}
+	if os.Getenv("RAILCAR_E2E_LOGS") != "" {
+		opts.Logger = slog.New(slog.NewTextHandler(testWriter{t, handle}, &slog.HandlerOptions{Level: slog.LevelDebug}))
+	}
+	e, err := New(c, opts)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -119,6 +127,17 @@ func (r *railcar) find(chat, body string) Message {
 }
 
 func init() { keyring.MockInit() }
+
+// testWriter sends a log to the test's output.
+type testWriter struct {
+	t    *testing.T
+	name string
+}
+
+func (w testWriter) Write(b []byte) (int, error) {
+	w.t.Logf("%s: %s", w.name, strings.TrimSpace(string(b)))
+	return len(b), nil
+}
 
 // idOf finds a message's ID in reroute-cli's history, whose lines are
 // "<id> <who>: <text>".

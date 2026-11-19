@@ -58,6 +58,18 @@ type Chat struct {
 	// Left is set once this identity left the group chat, or was removed
 	// from it. Its history stays.
 	Left bool `json:"left,omitempty"`
+	// For a community channel (KindChannel): its community server, the
+	// community's name, the channel's ID and place in the order, whether
+	// it's a voice channel, who's in it, the newest sequence number seen,
+	// and how far this member has read it (§16.4, §16.5).
+	Community     string   `json:"community,omitempty"`
+	CommunityName string   `json:"community_name,omitempty"`
+	Channel       uint64   `json:"channel,omitempty"`
+	Order         int      `json:"order,omitempty"`
+	Voice         bool     `json:"voice,omitempty"`
+	InVoice       []string `json:"-"`
+	NewestSeq     uint64   `json:"newest_seq,omitempty"`
+	ReadSeq       uint64   `json:"read_seq,omitempty"`
 	// Applied is the hash of the commit applied in each recent epoch, to
 	// notice a hub that sends members different commits (§11.6).
 	Applied map[uint64]wire.Bytes `json:"applied,omitempty"`
@@ -98,6 +110,11 @@ type buffered struct {
 	Data     wire.Bytes   `json:"data"`
 	Receipt  *wire.Signed `json:"receipt,omitempty"`
 	Received int64        `json:"received"`
+	// Community deliveries also carry a channel, its sequence number, and
+	// a code join's proof (§10.1).
+	Channel *uint64      `json:"channel,omitempty"`
+	Seq     *uint64      `json:"seq,omitempty"`
+	Proof   *wire.Signed `json:"proof,omitempty"`
 }
 
 // maxBuffered bounds the deliveries kept for later epochs in one chat.
@@ -133,6 +150,14 @@ type Message struct {
 	// System marks a line the client shows on its own, such as a new
 	// device in the chat (§11.9). It has no sender.
 	System bool `json:"system,omitempty"`
+	// Seq is a community channel message's sequence number (§16.5).
+	Seq uint64 `json:"seq,omitempty"`
+	// Gap marks a placeholder for sequence numbers this device lacks,
+	// from Seq to GapEnd (§16.5, "Gaps in history").
+	Gap    bool   `json:"gap,omitempty"`
+	GapEnd uint64 `json:"gap_end,omitempty"`
+	// Everyone marks an @everyone that counts (§12, §16.3).
+	Everyone bool `json:"everyone,omitempty"`
 }
 
 // state is the record that holds contacts and chats.
@@ -144,6 +169,9 @@ type state struct {
 	// Expected lists the chats a link bundle said this device would be
 	// added to (§7.2).
 	Expected []string `json:"expected,omitempty"`
+	// Communities are the communities this identity is in, by community
+	// server name (§16).
+	Communities map[string]*Community `json:"communities,omitempty"`
 }
 
 func loadState(p *store.Profile) (*state, error) {
@@ -159,6 +187,9 @@ func loadState(p *store.Profile) (*state, error) {
 	}
 	if st.Handles == nil {
 		st.Handles = map[string]string{}
+	}
+	if st.Communities == nil {
+		st.Communities = map[string]*Community{}
 	}
 	return st, nil
 }

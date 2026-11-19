@@ -93,7 +93,7 @@ func (e *Engine) syncAll(ctx context.Context) (bool, error) {
 	var errs []error
 	for _, id := range slices.Sorted(maps.Keys(e.st.Chats)) {
 		ch := e.st.Chats[id]
-		if ch.Stopped != "" {
+		if ch.Stopped != "" || ch.Kind == KindChannel || ch.Left {
 			continue
 		}
 		// Apply what the hub holds first, so the commit is for the newest

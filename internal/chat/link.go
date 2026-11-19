@@ -108,7 +108,7 @@ func (e *Engine) AddDevice(ctx context.Context, d client.NewDevice, name string)
 		}
 	}
 	for _, id := range slices.Sorted(maps.Keys(e.st.Chats)) {
-		if e.st.Chats[id].Stopped == "" {
+		if c := e.st.Chats[id]; c.Stopped == "" && c.Kind != KindChannel && !c.Left {
 			b.Groups = append(b.Groups, id)
 		}
 	}

@@ -264,7 +264,19 @@ func (e *Engine) SendText(ctx context.Context, chat, body, reply string) (Messag
 		return Message{}, err
 	}
 	c := Text{T: CText, ID: m.ID, TS: now, Body: &body, Reply: reply}
-	err = e.sendContent(ctx, ch, c, false)
+	if ch.Kind == KindChannel {
+		if strings.Contains(" "+body+" ", " @everyone ") {
+			c.Everyone = true
+		}
+		var seq uint64
+		seq, err = e.sendChannel(ctx, ch, c)
+		if err == nil {
+			e.changeMessage(ch, m.ID, func(x *Message) error { x.Seq = seq; return nil })
+			m.Seq = seq
+		}
+	} else {
+		err = e.sendContent(ctx, ch, c, false)
+	}
 	m.Status = Sent
 	if err != nil {
 		m.Status = Failed
@@ -285,6 +297,12 @@ func (e *Engine) Edit(ctx context.Context, chat, target, body string) error {
 
 // Delete deletes one of this identity's messages for everyone (§12).
 func (e *Engine) Delete(ctx context.Context, chat, target string) error {
+	e.mu.Lock()
+	if ch := e.st.Chats[chat]; ch != nil && ch.Kind == KindChannel {
+		defer e.mu.Unlock()
+		return e.deleteChannel(ctx, ch, target)
+	}
+	e.mu.Unlock()
 	return e.changeOwn(ctx, chat, target, func(now int64) any {
 		return Delete{T: CDelete, ID: newMsgID(), TS: now, Target: target}
 	}, func(m *Message) { m.Body, m.Deleted, m.Reactions = "", true, nil })
@@ -345,6 +363,9 @@ func (e *Engine) SetTyping(ctx context.Context, chat string, on bool) error {
 	if err != nil {
 		return err
 	}
+	if ch.Kind == KindChannel {
+		return nil // typing in channels comes in a later version
+	}
 	return e.sendContent(ctx, ch, Typing{T: CTyping, TS: e.c.Clock().Now().Unix(), On: &on}, true)
 }
 
@@ -370,6 +391,10 @@ func (e *Engine) sendable(chat string) (*Chat, error) {
 // group, and sends it to every member (§10.2, §12). The caller holds
 // e.mu.
 func (e *Engine) sendContent(ctx context.Context, ch *Chat, content any, ephemeral bool) error {
+	if ch.Kind == KindChannel {
+		_, err := e.sendChannel(ctx, ch, content)
+		return err
+	}
 	gid := mustB64(ch.ID)
 	if ch.Kind == KindGroup {
 		// OpenMLS sends nothing while a proposal waits: commit a
