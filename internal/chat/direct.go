@@ -194,6 +194,7 @@ func (e *Engine) adoptDirect(ch *Chat) {
 			delete(e.st.Chats, oldID)
 			e.dev.mls.Group(mustB64(oldID)).Delete()
 			e.dev.Save()
+			e.emit(Event{Kind: EventChatRemoved, ChatID: oldID})
 		}
 	}
 	if ch.LastActivity == 0 {

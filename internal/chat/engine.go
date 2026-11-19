@@ -37,6 +37,10 @@ const (
 	EventContact
 	// EventChat: a chat was created or changed.
 	EventChat
+	// EventChatRemoved: a chat is gone from this device, such as a direct
+	// chat replaced by a new one with the same person (§11.11). ChatID
+	// names it.
+	EventChatRemoved
 	// EventMessage: a message was added or changed.
 	EventMessage
 	// EventTyping: someone started or stopped typing in a chat.
