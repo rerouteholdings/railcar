@@ -140,12 +140,45 @@ type Backend interface {
 	// chats follow (§11.9).
 	RemoveDevice(ctx context.Context, key string) error
 
+	// Contacts lists the identity's contacts, for choosing people to put
+	// in a group chat.
+	Contacts(ctx context.Context) ([]Member, error)
+
+	// CreateGroup creates a group chat with some contacts, by handle, and
+	// returns its ID. The identity is its first admin (§11.5, §11.8).
+	CreateGroup(ctx context.Context, name string, handles []string) (string, error)
+
+	// Act runs an action on a group chat or a community, and returns a
+	// line to show when it worked. chat is the open chat, or empty for
+	// actions that don't need one. See Action for the kinds.
+	Act(ctx context.Context, chat string, a Action) (string, error)
+
 	// SignOut removes this device's identity from the profile. Afterwards,
 	// Open returns ErrNoIdentity.
 	SignOut(ctx context.Context) error
 
 	// Close stops the stream and closes Events.
 	Close() error
+}
+
+// Action is something to do in a group chat or a community, by Kind:
+//
+//   - Group chats (§11.7, §11.8, §12): add-member, remove-member,
+//     make-admin, revoke-admin (Arg: a handle), approve-add, decline-add
+//     (Arg: a request ID, or empty for the oldest), leave, rename and
+//     topic (Arg: the text).
+//   - Communities (§16): create-community (Arg: the community server,
+//     Arg2: the name, Arg3: the creation code), join-community (Arg: a
+//     code), make-code, add-channel and add-voice-channel (Arg: the
+//     name), add-role (Arg: the name, Arg2: the permissions, separated by
+//     spaces), give-role (Arg: a handle, Arg2: a role's name), history,
+//     kick, ban (Arg: a handle), timeout (Arg: a handle, Arg2: minutes),
+//     and leave-community.
+type Action struct {
+	Kind string
+	Arg  string
+	Arg2 string
+	Arg3 string
 }
 
 // ErrNoIdentity is what Open returns for a profile without an identity.
@@ -251,6 +284,11 @@ type ChatKind int
 const (
 	DirectChat ChatKind = iota
 	GroupChat
+	// ChannelChat is a community's text channel (§16.4).
+	ChannelChat
+	// VoiceChannel is a community's voice channel. Railcar lists it,
+	// and can't join it.
+	VoiceChannel
 	// ContactRequest is someone asking to be a contact (§9.2).
 	ContactRequest
 	// SentRequest is the identity's own request, waiting for an answer.
@@ -261,6 +299,18 @@ const (
 type Member struct {
 	Name   string
 	Handle string
+	// Admin marks a group chat's admin (§11.8).
+	Admin bool
+	// Roles names a community member's roles (§16.3).
+	Roles string
+}
+
+// AddRequest is a member's request to add someone to a group chat, which
+// an admin answers (§11.8).
+type AddRequest struct {
+	ID   string
+	From Member
+	Who  Member
 }
 
 // Chat is one entry in the chat list.
@@ -278,10 +328,26 @@ type Chat struct {
 	// change from another member that broke the rules (§7.1). It's empty
 	// for a chat that works.
 	Stopped string
+	// Topic is a group chat's or channel's topic.
+	Topic string
+	// Requests are a group chat's unanswered add-requests, and Admin
+	// whether the identity is an admin there (§11.8).
+	Requests []AddRequest
+	Admin    bool
+	// Community is a channel's community name, CommunityServer its
+	// community server, and Order its place in the channel list (§16.4).
+	Community       string
+	CommunityServer string
+	Order           int
+	// InVoice lists who's in a voice channel.
+	InVoice []Member
 }
 
 // IsRequest reports whether the entry is a contact request, not a chat.
 func (c Chat) IsRequest() bool { return c.Kind == ContactRequest || c.Kind == SentRequest }
+
+// IsChannel reports whether the entry is a community channel.
+func (c Chat) IsChannel() bool { return c.Kind == ChannelChat || c.Kind == VoiceChannel }
 
 // MessageStatus tracks a message the signed-in identity sent.
 type MessageStatus int
@@ -309,6 +375,8 @@ type Message struct {
 	Edited bool
 	// Deleted is true when the sender deleted the message for everyone.
 	Deleted bool
+	// Seq is a channel message's sequence number (§16.5).
+	Seq uint64
 	// Unsupported is true for content this version of Railcar can't show
 	// (§12).
 	Unsupported bool

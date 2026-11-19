@@ -154,7 +154,10 @@ func (d *DemoBackend) seed() {
 		{from: demoRavi, at: ago(25), text: "The forecast says clear until noon."},
 		{from: demoRavi, at: ago(24), text: "Can you check that the trailhead is open? The park's site was down earlier.", replyTo: 3},
 	})
-	add(Chat{ID: "trail", Kind: GroupChat, Title: "Trail crew", Members: []Member{demoRavi, demoMia, demoOskar}}, 3, []line{
+	miaAdmin := demoMia
+	miaAdmin.Admin = true
+	add(Chat{ID: "trail", Kind: GroupChat, Title: "Trail crew", Topic: "Saturday's ridge trail", Admin: true,
+		Members: []Member{demoRavi, miaAdmin, demoOskar}}, 3, []line{
 		{from: demoMia, at: ago(190), text: "I made a packing list for Saturday:\nwater filter, first aid kit, two maps, and snacks for four."},
 		{from: demoOskar, at: ago(186), text: "I can drive. The car fits four, with the packs in the back.", edited: true},
 		{from: me, at: ago(180), text: "I'll ride with Oskar, then."},
@@ -178,6 +181,31 @@ func (d *DemoBackend) seed() {
 	add(Chat{ID: "noor", Kind: DirectChat, Title: demoNoor.Name, Members: []Member{demoNoor}}, 0, []line{
 		{from: demoNoor, at: day(8, 12, 30), text: "Thanks for the invite code. I'm set up now."},
 	})
+
+	// A community, with its channels in their order.
+	owl := func(m Member, roles string) Member { m.Roles = roles; return m }
+	night := []Member{owl(demoRavi, "Night owls"), owl(demoMia, ""), owl(demoNoor, ""), owl(demoOskar, "")}
+	channel := func(id, title, topic string, order int) Chat {
+		return Chat{ID: id, Kind: ChannelChat, Title: title, Topic: topic, Community: "Night shift",
+			CommunityServer: "community.example.com", Order: order, Members: night, Admin: true}
+	}
+	add(channel("c-general", "general", "Anything goes", 0), 1, []line{
+		{from: demoNoor, at: ago(300), text: "Who's on the late train tonight?"},
+		{from: demoRavi, at: ago(290), text: "Me, from 11 to 3."},
+		{from: me, at: ago(120), text: "Bring the radio, the one at the box is flaky."},
+		{from: demoOskar, at: ago(15), text: "Coffee's on in the signal box."},
+	})
+	add(channel("c-notices", "announcements", "Only the owls post here", 1), 0, []line{
+		{from: demoRavi, at: day(2, 22, 0), text: "Track work on line 4 all week. Expect delays."},
+	})
+	lounge := channel("c-lounge", "Lounge", "", 2)
+	lounge.Kind, lounge.InVoice, lounge.LastActivity = VoiceChannel, []Member{demoRavi, demoMia}, ago(5)
+	d.chats[lounge.ID] = &lounge
+	n := 1
+	for i := range d.messages["c-general"] {
+		d.messages["c-general"][i].Seq = uint64(n)
+		n++
+	}
 }
 
 // previewOf turns message text into one line for the chat list.

@@ -40,6 +40,7 @@ const (
 	overlayAddDevice
 	overlayApprovalCode
 	overlayDevices
+	overlayNewGroup
 )
 
 // narrowWidth is the width under which the main view shows one pane at a
@@ -115,6 +116,13 @@ type mainView struct {
 	// follow is the handle of a contact request that was open when it left
 	// the list. Their direct chat opens when it arrives.
 	follow string
+
+	// folded lists the communities whose channels the chat list hides,
+	// by community server.
+	folded map[string]bool
+
+	// The create-group box.
+	grp groupForm
 }
 
 func newMainView(a *App) *mainView {
@@ -124,6 +132,7 @@ func newMainView(a *App) *mainView {
 		loaded:   map[string]bool{},
 		drafts:   map[string]string{},
 		typing:   map[string]map[string]typist{},
+		folded:   map[string]bool{},
 		help:     help.New(),
 	}
 	m.vp = viewport.New()
@@ -307,19 +316,65 @@ func (m *mainView) setChats(chats []Chat) tea.Cmd {
 			chats[i].Unread = 0
 		}
 	}
+	// Direct chats, group chats, and requests first, newest activity
+	// first; then each community, by name, with its channels in their
+	// order (§16.4).
 	sort.SliceStable(chats, func(i, j int) bool {
-		if !chats[i].LastActivity.Equal(chats[j].LastActivity) {
-			return chats[i].LastActivity.After(chats[j].LastActivity)
+		a, b := chats[i], chats[j]
+		if a.IsChannel() != b.IsChannel() {
+			return !a.IsChannel()
 		}
-		return chats[i].Title < chats[j].Title
+		if a.IsChannel() {
+			if a.Community != b.Community {
+				return a.Community < b.Community
+			}
+			if a.CommunityServer != b.CommunityServer {
+				return a.CommunityServer < b.CommunityServer
+			}
+			return a.Order < b.Order
+		}
+		if !a.LastActivity.Equal(b.LastActivity) {
+			return a.LastActivity.After(b.LastActivity)
+		}
+		return a.Title < b.Title
 	})
 	m.chats = chats
-	items := make([]list.Item, len(chats))
-	for i, c := range chats {
-		items[i] = chatItem{c}
+	var items []list.Item
+	server := ""
+	for _, c := range chats {
+		if c.IsChannel() && c.CommunityServer != server {
+			server = c.CommunityServer
+			h := communityItem{name: c.Community, server: server, folded: m.folded[server]}
+			for _, x := range chats {
+				if x.CommunityServer == server {
+					h.unread += x.Unread
+				}
+			}
+			items = append(items, h)
+		}
+		if c.IsChannel() && m.folded[c.CommunityServer] && c.ID != m.active {
+			continue
+		}
+		items = append(items, chatItem{c})
 	}
 	cmd := m.list.SetItems(items)
 	m.selectInList(m.active)
+	return cmd
+}
+
+// toggleFold folds or unfolds the community under the list's cursor.
+func (m *mainView) toggleFold() tea.Cmd {
+	h, ok := m.list.SelectedItem().(communityItem)
+	if !ok {
+		return nil
+	}
+	m.folded[h.server] = !m.folded[h.server]
+	cmd := m.setChats(m.chats)
+	for i, it := range m.list.VisibleItems() {
+		if x, ok := it.(communityItem); ok && x.server == h.server {
+			m.list.Select(i)
+		}
+	}
 	return cmd
 }
 
@@ -497,7 +552,12 @@ func (m *mainView) upsert(msg Message, replace bool) {
 		}
 	}
 	msgs = append(msgs, msg)
-	sort.SliceStable(msgs, func(i, j int) bool { return msgs[i].Sent.Before(msgs[j].Sent) })
+	sort.SliceStable(msgs, func(i, j int) bool {
+		if msgs[i].Seq != 0 && msgs[j].Seq != 0 {
+			return msgs[i].Seq < msgs[j].Seq // channels keep sequence order (§16.5)
+		}
+		return msgs[i].Sent.Before(msgs[j].Sent)
+	})
 	m.messages[msg.Chat] = msgs
 }
 
@@ -610,6 +670,9 @@ func (m *mainView) update(a *App, msg tea.Msg) tea.Cmd {
 	case noticeMsg:
 		m.notice = msg.text
 		return nil
+	case contactsMsg, groupMadeMsg, actedMsg:
+		cmd, _ := m.handleGroupMsg(a, msg)
+		return cmd
 	case actionMsg:
 		if msg.err != nil {
 			m.notice = msg.bad + msg.err.Error()
@@ -659,6 +722,13 @@ func (m *mainView) update(a *App, msg tea.Msg) tea.Cmd {
 			var cmd tea.Cmd
 			m.addInput, cmd = m.addInput.Update(msg)
 			return cmd
+		case overlayNewGroup:
+			if g := &m.grp; g.field < len(g.inputs) {
+				var cmd tea.Cmd
+				g.inputs[g.field], cmd = g.inputs[g.field].Update(msg)
+				return cmd
+			}
+			return nil
 		}
 		if m.overlay == overlayPalette {
 			var cmd tea.Cmd
@@ -701,6 +771,8 @@ func (m *mainView) key(a *App, msg tea.KeyPressMsg) tea.Cmd {
 		return cmd
 	case overlayAddContact:
 		return m.addContactKey(a, msg)
+	case overlayNewGroup:
+		return m.groupKey(a, msg)
 	case overlayAddDevice, overlayApprovalCode:
 		return m.addDeviceKey(a, msg)
 	case overlayDevices:
@@ -794,7 +866,7 @@ func (m *mainView) key(a *App, msg tea.KeyPressMsg) tea.Cmd {
 			if id := m.selectedID(); id != "" {
 				return m.openChat(a, id, true)
 			}
-			return nil
+			return m.toggleFold()
 		case msg.String() == "right" || msg.String() == "l":
 			if m.active != "" && !m.layout.narrow {
 				return m.setFocus(a, focusMessages)
@@ -970,6 +1042,8 @@ func (m *mainView) view(a *App) string {
 		return overlayOn(screen, m.approvalCodeView(a), a.width, a.height)
 	case overlayDevices:
 		return overlayOn(screen, m.devicesView(a), a.width, a.height)
+	case overlayNewGroup:
+		return overlayOn(screen, m.groupView(a), a.width, a.height)
 	}
 	return screen
 }
@@ -1030,6 +1104,9 @@ func (m *mainView) convView(a *App) string {
 	if c.IsRequest() {
 		return strings.Join([]string{header, sub, rule, m.requestView(a, c, w, l.conv.h-5)}, "\n")
 	}
+	if c.Kind == VoiceChannel {
+		return strings.Join([]string{header, sub, rule, voiceView(a, c, w, l.conv.h-5)}, "\n")
+	}
 
 	return strings.Join([]string{
 		header,
@@ -1044,6 +1121,15 @@ func (m *mainView) convView(a *App) string {
 // chatSubtitle is the line under a chat's title: the contact's handle, or
 // the group's members.
 func chatSubtitle(c Chat) string {
+	if c.IsChannel() {
+		if c.Topic != "" {
+			return c.Topic
+		}
+		return c.Community
+	}
+	if c.Kind == GroupChat && c.Topic != "" {
+		return c.Topic
+	}
 	if c.Kind == DirectChat && len(c.Members) == 1 {
 		return "@" + c.Members[0].Handle
 	}
@@ -1081,10 +1167,23 @@ func (m *mainView) detailsView(a *App, w int) string {
 	}
 	line := func(s string) { b.WriteString(" " + ansi.Truncate(s, w-2, "…") + "\n") }
 	line(t.bold.Render(c.Title))
-	if c.Kind == DirectChat {
+	switch c.Kind {
+	case DirectChat:
 		line(t.muted.Render("Direct chat"))
-	} else {
+	case GroupChat:
 		line(t.muted.Render("Group chat, " + plural(len(c.Members)+1, "member", "members")))
+	case ChannelChat, VoiceChannel:
+		kind := "Text channel"
+		if c.Kind == VoiceChannel {
+			kind = "Voice channel"
+		}
+		line(t.muted.Render(kind + " in " + c.Community))
+		line(t.dim.Render(c.CommunityServer))
+	}
+	if c.Topic != "" {
+		b.WriteString("\n")
+		line(t.dim.Render("Topic"))
+		b.WriteString(t.text.Width(w - 1).PaddingLeft(1).Render(c.Topic) + "\n")
 	}
 	b.WriteString("\n")
 	if c.Kind == DirectChat {
@@ -1093,20 +1192,46 @@ func (m *mainView) detailsView(a *App, w int) string {
 		line(t.dim.Render("Members"))
 	}
 	for _, mb := range c.Members {
-		if c.Kind == GroupChat {
-			line(t.text.Render(mb.Name))
+		label := mb.Name
+		if label == "" {
+			label = "@" + mb.Handle
 		}
-		line(t.muted.Render("@" + mb.Handle))
+		switch {
+		case mb.Admin:
+			label += " (admin)"
+		case mb.Roles != "":
+			label += " (" + mb.Roles + ")"
+		}
+		if c.Kind != DirectChat {
+			line(t.text.Render(label))
+		}
+		if mb.Name != "" || c.Kind == DirectChat {
+			line(t.muted.Render("@" + mb.Handle))
+		}
 	}
-	if c.Kind == GroupChat {
-		line(t.text.Render("You"))
+	if c.Kind != DirectChat {
+		you := "You"
+		if c.Kind == GroupChat && c.Admin {
+			you += " (admin)"
+		}
+		line(t.text.Render(you))
 		line(t.muted.Render("@" + a.identity.Handle))
+	}
+	if len(c.Requests) > 0 {
+		b.WriteString("\n")
+		line(t.dim.Render("Waiting for an admin"))
+		for _, r := range c.Requests {
+			line(t.text.Render("@" + r.From.Handle + " wants to add @" + r.Who.Handle))
+		}
+		if c.Admin {
+			line(t.muted.Render(":approve or :decline-add"))
+		}
 	}
 	b.WriteString("\n")
 	if a.opts.Demo {
 		b.WriteString(t.away.Width(w - 1).PaddingLeft(1).Render("Demo data. Nothing here is sent or encrypted."))
 	} else {
-		b.WriteString(t.dim.Width(w - 1).PaddingLeft(1).Render("Messages in this chat are end-to-end encrypted (E2EE) with MLS."))
+		b.WriteString(t.dim.Width(w - 1).PaddingLeft(1).Render("Messages here are end-to-end encrypted (E2EE) with MLS."))
 	}
 	return b.String()
 }
@@ -1192,4 +1317,21 @@ func overlayOn(base, box string, w, h int) string {
 	canvas := lipgloss.NewCanvas(w, h)
 	canvas.Compose(c)
 	return canvas.Render()
+}
+
+// voiceView fills the conversation pane for a voice channel: who's in it.
+// Railcar can't join voice channels.
+func voiceView(a *App, c Chat, w, h int) string {
+	t := a.theme
+	lines := []string{t.bold.Render("Railcar can't join voice channels."), "",
+		t.muted.Width(w - 4).Render("Voice needs audio, which a terminal doesn't have. Join it from Reroute, or another Tieroute client with voice.")}
+	if len(c.InVoice) > 0 {
+		lines = append(lines, "", t.dim.Render("In the channel now"))
+		for _, mb := range c.InVoice {
+			lines = append(lines, t.text.Render("@"+mb.Handle))
+		}
+	} else {
+		lines = append(lines, "", t.dim.Render("Nobody is in it now."))
+	}
+	return lipgloss.Place(w, h, lipgloss.Center, lipgloss.Center, strings.Join(lines, "\n"))
 }

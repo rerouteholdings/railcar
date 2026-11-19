@@ -133,13 +133,14 @@ func TestOpensFirstChatAndClearsUnread(t *testing.T) {
 	}
 }
 
+// Chats come newest first, then each community's channels in their order.
 func TestChatsSortedByActivity(t *testing.T) {
 	a, _ := started(t, 120, 40)
 	var got []string
 	for _, c := range a.main.chats {
 		got = append(got, c.ID)
 	}
-	want := []string{"ravi", "trail", "oskar", "mia", "books", "noor"}
+	want := []string{"ravi", "trail", "oskar", "mia", "books", "noor", "c-general", "c-notices", "c-lounge"}
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("order = %v, want %v", got, want)
 	}

@@ -27,6 +27,17 @@ func (c chatItem) FilterValue() string {
 	return c.chat.Title + "\t" + strings.Join(parts, " ")
 }
 
+// communityItem is a community's heading in the list, above its
+// channels. Enter folds and unfolds it.
+type communityItem struct {
+	name, server string
+	folded       bool
+	unread       int
+}
+
+// FilterValue implements list.Item.
+func (c communityItem) FilterValue() string { return c.name + "\t" + c.server }
+
 // filterChats keeps the chats that contain what's typed, in any case. Chats
 // whose title starts with it come first, then titles with a word that
 // starts with it, then other titles, then chats that match only by a
@@ -84,11 +95,15 @@ func (d chatDelegate) Spacing() int                        { return 1 }
 func (d chatDelegate) Update(tea.Msg, *list.Model) tea.Cmd { return nil }
 
 func (d chatDelegate) Render(w io.Writer, m list.Model, index int, item list.Item) {
+	t := *d.t
+	if h, ok := item.(communityItem); ok {
+		d.renderCommunity(w, m, index, h)
+		return
+	}
 	ci, ok := item.(chatItem)
 	if !ok {
 		return
 	}
-	t := *d.t
 	c := ci.chat
 	width := m.Width()
 	selected := index == m.Index()
@@ -128,17 +143,68 @@ func (d chatDelegate) Render(w io.Writer, m list.Model, index int, item list.Ite
 
 	inner := width - 2
 	titleW := max(1, inner-rightW-1)
-	name := ansi.Truncate(c.Title, titleW, "…")
+	label := c.Title
+	switch c.Kind {
+	case ChannelChat:
+		label = "  # " + c.Title
+	case VoiceChannel:
+		label = "  🔊 " + c.Title
+		if len(c.InVoice) > 0 {
+			label += fmt.Sprintf(" (%d)", len(c.InVoice))
+		}
+	}
+	name := ansi.Truncate(label, titleW, "…")
 	gap := max(1, inner-lipgloss.Width(name)-rightW)
 	line1 := mark.Render(marker) + title.Render(" "+name) + title.Render(strings.Repeat(" ", max(0, gap-1))) + right + title.Render(" ")
 
 	preview := c.Preview
-	if preview == "" {
+	switch {
+	case c.Kind == VoiceChannel:
+		preview = "Voice channel"
+	case preview == "":
 		preview = "No messages yet"
+	}
+	if c.IsChannel() {
+		preview = "  " + preview
 	}
 	preview = ansi.Truncate(preview, max(1, inner-1), "…")
 	line2 := mark.Render(marker) + muted.Render(" "+preview+strings.Repeat(" ", max(0, inner-1-lipgloss.Width(preview)))+" ")
 
+	fmt.Fprint(w, line1+"\n"+line2)
+}
+
+// renderCommunity draws a community's heading: its name, with its
+// unread count, and its community server.
+func (d chatDelegate) renderCommunity(w io.Writer, m list.Model, index int, h communityItem) {
+	t := *d.t
+	width := m.Width()
+	selected := index == m.Index()
+	title, muted, marker := t.bold, t.muted, " "
+	if selected {
+		title, muted, marker = title.Background(t.p.active), muted.Background(t.p.active), "▌"
+		if t.noColor {
+			title, muted = t.chatRowSelected, t.chatRowSelected
+		}
+	}
+	mark := lipgloss.NewStyle()
+	if selected {
+		mark = t.chatMarker
+	}
+	arrow := "▾ "
+	if h.folded {
+		arrow = "▸ "
+	}
+	right, rightW := "", 0
+	if h.unread > 0 && h.folded {
+		right = t.badge.Render(fmt.Sprintf(" %d ", h.unread))
+		rightW = lipgloss.Width(right)
+	}
+	inner := width - 2
+	name := ansi.Truncate(arrow+h.name, max(1, inner-rightW-1), "…")
+	gap := max(1, inner-lipgloss.Width(name)-rightW)
+	line1 := mark.Render(marker) + title.Render(" "+name) + title.Render(strings.Repeat(" ", max(0, gap-1))) + right + title.Render(" ")
+	sub := ansi.Truncate("Community on "+h.server, max(1, inner-1), "…")
+	line2 := mark.Render(marker) + muted.Render(" "+sub+strings.Repeat(" ", max(0, inner-1-lipgloss.Width(sub)))+" ")
 	fmt.Fprint(w, line1+"\n"+line2)
 }
 
