@@ -23,6 +23,7 @@ func (e *Engine) rotateMetaKey(ctx context.Context, cm *Community) error {
 		return err
 	}
 	if !c.State().Can(e.c.ID(), community.PermAdministrate) {
+		e.rotateGroupKeys(ctx, cm)
 		return nil
 	}
 	key := randKey()
@@ -91,8 +92,36 @@ func (e *Engine) rotateMetaKey(ctx context.Context, cm *Community) error {
 		return err
 	}
 	e.refreshChannels(cm)
-	e.sendKeys(ctx, cm, cm.Groups[cm.MembersGroup])
+	e.rotateGroupKeys(ctx, cm)
 	return nil
+}
+
+// rotateGroupKeys gives every text channel that keeps history a new
+// history key, and every restricted group this device is in a new
+// metadata key, since the removed member could see them; then it sends
+// each group its keys (§16.2.4, §16.5). Segments already written keep
+// their keys. The caller holds e.mu.
+func (e *Engine) rotateGroupKeys(ctx context.Context, cm *Community) {
+	c, err := e.communityChain(cm)
+	if err != nil {
+		return
+	}
+	st := c.State()
+	for _, gid := range slices.Sorted(maps.Keys(cm.Groups)) {
+		g := cm.Groups[gid]
+		if g.See != nil {
+			addGroupKey(cm, g.ID, randKey())
+		}
+		for _, ch := range st.Channels {
+			if ch.Kind == "text" && ch.History && e.groupFor(cm, ch) == g {
+				addKey(&cm.HistoryKeys, ch.ID, randKey())
+			}
+		}
+	}
+	e.save()
+	for _, gid := range slices.Sorted(maps.Keys(cm.Groups)) {
+		e.sendKeys(ctx, cm, cm.Groups[gid])
+	}
 }
 
 // errNothingToSeal ends a rotation with no names to re-seal: the new key

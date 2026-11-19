@@ -65,7 +65,7 @@ What it does:
 - History: reading segments with each history key until one opens them, checking every line, and verifying every message as imported history (§16.5, §7.3); uploading segments that start at the first number this device holds and never overlap a stored one; asking for missing numbers with `history-request`, and answering requests.
 - Roles, codes, and restricted channels: adding roles ranked just below this identity, assigning them, then adding the member to the restricted groups their roles see now and removing them from the others, with new keys for those groups. A restricted group requires `0xF0A1` and `0xF0A3` from creation on, and is pinned at its first commit when every leaf lists `0xF0A4`, which then adds `0xF0A4` to what it requires (§16.5).
 - Read positions: sent when a channel is read, and taken from the community server every 30 seconds when they're ahead (§16.4).
-- Moderation: timeouts, kicks, and bans, with Removes of the member's leaves in every group this device is in. After a kick or ban, an admin's Railcar rotates the community metadata key: one entry re-seals every role's name and color, and every name and topic of the channels everyone sees, under a new key, which then goes to the members group (§16.2.4). A moderator without `administrate` leaves that to an admin.
+- Moderation: timeouts, kicks, and bans, with Removes of the member's leaves in every group this device is in. After a kick or ban, an admin's Railcar rotates the community metadata key: one entry re-seals every role's name and color, and every name and topic of the channels everyone sees, under a new key, which then goes to the members group (§16.2.4). A moderator without `administrate` leaves that to an admin. Either way, the moderator's Railcar gives every text channel that keeps history a new history key, and each restricted group it's in a new metadata key, and sends each group its keys (§16.5).
 - Voice channels are listed with who's in them, from `voice-state`. Railcar can't join them.
 
 | What | Checks | Section |
@@ -110,7 +110,6 @@ for ev := range eng.Events() { ... }
 - Re-creating a group chat, and linking a Welcome's `replaces` to the old chat: a re-created group shows as a separate chat (§11.11).
 - Moving a group's hub (§11.11).
 - Following a community's move, and re-creating a community's groups (§16.5, §16.6).
-- Rotating a restricted channel's metadata key and history key when someone stops seeing it (§16.2.4, §16.5).
 - The fork rule for community chains: Railcar follows the community server's chain, and stops at an entry it refuses.
 - Latching a group that hasn't latched when nothing else changes (§7.1). A device change latches it.
 - Communities in link bundles: Railcar sends none, and a linked device doesn't join the ones a bundle lists, so it joins each community again with a code (§7.2 step 5).
