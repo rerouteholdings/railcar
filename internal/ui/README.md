@@ -19,9 +19,9 @@ go run ./cmd/railcar --demo
    - The chat list: direct chats, group chats, and contact requests, newest activity first, then each community under a heading, with its channels in their order: `#` for text channels, and a speaker for voice channels, with how many people are in them. Enter on a heading folds the community's channels away. Unread counts show on each chat, and on a folded community. Press / to find a chat by its title or a member's name or handle. Contact requests are in the list too: someone else's, until it's accepted or declined, and the identity's own, until the chat starts.
    - The open chat. Messages are grouped by day, and by sender within a day, with a time on each group. Replies show the message they answer, edited messages say so, deleted ones say **Message deleted**, and reactions show under the message with their counts. The line under the chat's title says who's typing. Lines Railcar shows on its own, such as "@kat has a new device", are centered, without a sender (§11.9). Below the messages is the composer.
    - An open contact request shows who it's from, with a to accept it and d to decline it.
-   - The details pane, opened with Ctrl+O. It lists the chat's members and handles, a group chat's admins and topic and the add-requests waiting for an admin, and a channel's community and its members' roles.
+   - The details pane, opened with Ctrl+O. In a direct chat, it shows the other person's public profile (§13): their initials in place of a picture, which terminals can't show well, their display name and handle, their presence and status message, their bio, and their links, each with its full domain first. Elsewhere it lists the chat's members, with their presence, and handles, a group chat's admins and topic and the add-requests waiting for an admin, and a channel's community and its members' roles.
    - A voice channel shows who's in it, and says that Railcar can't join voice channels.
-   - The status bar shows the identity's handle, its homeserver, and the stream's state: **Connected**, **Connecting** or **Reconnecting** with a spinner, or **Offline**.
+   - The status bar shows the identity's handle, its homeserver, its presence when it isn't **Online**, and the stream's state: **Connected**, **Connecting** or **Reconnecting** with a spinner, or **Offline**.
 
    Under 80 columns, the main view shows one pane at a time: the chat list, the open chat, or its details.
 3. Overlays. Press ? for every key, and Ctrl+P or : for the command palette. The palette finds commands and chats as you type, and runs commands by name, such as `:quit` and `:sign-out`. Signing out asks first.
@@ -34,6 +34,8 @@ go run ./cmd/railcar --demo
    - In a group chat: `:add-member @handle` adds someone, directly as an admin, or by asking the admins otherwise; `:approve` and `:decline-add` answer the oldest add-request; `:remove-member`, `:make-admin`, and `:revoke-admin` take a handle; `:rename` and `:topic` take the text; and `:leave` leaves (§11.7, §11.8).
    - `:create-community` opens **Create a community**: the community server, a name, and the server's creation code. `:join` followed by a code joins one (§16.6).
    - In a channel: `:code` makes a join code and copies it; `:history` reads the channel's history; `:add-channel` and `:add-voice-channel` take a name; `:add-role Name talk moderate` adds a role; `:give-role @handle Name` assigns one; `:kick`, `:ban`, and `:timeout @handle minutes` moderate; and `:leave-community` leaves.
+   - `:presence away Back at 3` sets the presence state, one of available, online, away, busy, or offline, and optionally a status message; `:status` alone sets or clears the status message (§13.2). After 10 minutes without a key or a click, Railcar sets an available or online identity away, and back at the next key.
+   - `:name`, `:bio`, `:links`, and `:avatar` change the public profile, which anyone can see (§13.1). `:avatar` takes the path to a PNG, JPEG, WebP, or GIF of at most 1 MB, or `none`. `:profile` shows it.
    - `:reply`, `:edit`, `:delete`, and `:react` act on the latest message: someone else's for replying and reacting, the identity's own for editing and deleting. `:react 🎉` picks the emoji; it's 👍 otherwise, and reacting again with the same emoji takes it back.
 
 The mouse works too: click a chat to open it, click a pane to move to it, and scroll the messages or the chat list.
@@ -82,7 +84,7 @@ The interface reaches the protocol only through `Backend`, in `backend.go`. It c
 | `CancelApproval` | Stops adding a device, and forgets its code |
 | `Devices`, `RemoveDevice` | List the identity's devices, and remove one (§7.6) |
 | `Connect` | Starts the live stream, which reconnects on its own |
-| `Events` | A channel of `StreamChanged`, `ChatChanged`, `ChatRemoved`, `MessageAdded`, `MessageChanged`, `Typing`, and `SignedOut` events |
+| `Events` | A channel of `StreamChanged`, `ChatChanged`, `ChatRemoved`, `MessageAdded`, `MessageChanged`, `Typing`, `IdentityChanged`, and `SignedOut` events. A change of someone's presence or profile comes as a `ChatChanged` for each chat they're in |
 | `Chats` | Every direct chat and group chat, and every contact request, as a `ContactRequest` or `SentRequest` |
 | `Messages` | Up to a limit of a chat's messages, oldest first, before a given message or the latest |
 | `Send` | Queues a message and returns it as sending; a `MessageChanged` event follows when it's sent or fails |
@@ -104,7 +106,7 @@ Typing indicators follow §13.3: the composer sends one at most once a second wh
 
 ## Tests
 
-The golden files in `testdata/` are the screen as plain text: onboarding, the recovery words, the main view at 120 by 40 and at 70 by 30, and a sent message. After a change to the look, check the new screens and update them:
+The golden files in `testdata/` are the screen as plain text: onboarding, the recovery words, the main view at 120 by 40 and at 70 by 30, a sent message, and the details pane with a profile. After a change to the look, check the new screens and update them:
 
 ```sh
 go test ./internal/ui -update

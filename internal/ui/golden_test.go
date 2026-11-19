@@ -125,3 +125,14 @@ func TestGoldenSend(t *testing.T) {
 	waitText(t, tm, "See you at 7.")
 	golden.RequireEqual(t, screenText(finish(t, tm)))
 }
+
+func TestGoldenDetails(t *testing.T) {
+	a, _ := newTestApp(t, false)
+	tm := teatest.NewTestModel(t, a, teatest.WithInitialTermSize(120, 40))
+	waitText(t, tm, "Trail crew", "Connected")
+	// Open the chat with Ravi, then the details pane with his profile.
+	tm.Send(press(tea.KeyEnter))
+	tm.Send(tea.KeyPressMsg{Code: 'o', Mod: tea.ModCtrl})
+	waitText(t, tm, "Transit planner")
+	golden.RequireEqual(t, screenText(finish(t, tm)))
+}

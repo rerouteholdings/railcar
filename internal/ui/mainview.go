@@ -6,6 +6,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode"
 
 	"charm.land/bubbles/v2/help"
 	"charm.land/bubbles/v2/key"
@@ -71,6 +72,11 @@ type layout struct {
 // mainView is the chat list, the message view, the composer, and the
 // details pane, with the status bar under them.
 type mainView struct {
+	// lastInput is the last key or click, for auto-away (§13.2), and
+	// awayBusy is set while a change of it is on its way.
+	lastInput time.Time
+	awayBusy  bool
+
 	chats    []Chat
 	list     list.Model
 	active   string
@@ -174,8 +180,37 @@ func (m *mainView) applyTheme(t *theme) {
 
 func (m *mainView) init(a *App) tea.Cmd {
 	m.resize(a)
-	return m.loadChats(a)
+	m.lastInput = a.opts.Now()
+	return tea.Batch(m.loadChats(a), idleTick())
 }
+
+// Auto-away (§13.2): after idleAfter without a key or a click, Railcar
+// sets the user away, and back when they return.
+const (
+	idleAfter = 10 * time.Minute
+	idleCheck = 30 * time.Second
+)
+
+type idleTickMsg struct{}
+
+func idleTick() tea.Cmd {
+	return tea.Tick(idleCheck, func(time.Time) tea.Msg { return idleTickMsg{} })
+}
+
+// noteInput records input, and ends auto-away.
+func (m *mainView) noteInput(a *App) tea.Cmd {
+	m.lastInput = a.opts.Now()
+	if !a.identity.Away || m.awayBusy {
+		return nil
+	}
+	m.awayBusy = true
+	return call(func(ctx context.Context) tea.Msg {
+		_, err := a.b.Act(ctx, "", Action{Kind: "auto-away", Arg: "off"})
+		return awayMsg{err}
+	})
+}
+
+type awayMsg struct{ err error }
 
 func (m *mainView) loadChats(a *App) tea.Cmd {
 	return call(func(ctx context.Context) tea.Msg {
@@ -630,6 +665,18 @@ func (m *mainView) handleEvent(a *App, e Event) tea.Cmd {
 
 func (m *mainView) update(a *App, msg tea.Msg) tea.Cmd {
 	switch msg := msg.(type) {
+	case idleTickMsg:
+		if a.identity.Away || m.awayBusy || a.opts.Now().Sub(m.lastInput) < idleAfter {
+			return idleTick()
+		}
+		m.awayBusy = true
+		return tea.Batch(idleTick(), call(func(ctx context.Context) tea.Msg {
+			_, err := a.b.Act(ctx, "", Action{Kind: "auto-away", Arg: "on"})
+			return awayMsg{err}
+		}))
+	case awayMsg:
+		m.awayBusy = false
+		return nil
 	case tea.WindowSizeMsg:
 		m.resize(a)
 		return nil
@@ -754,6 +801,10 @@ func (m *mainView) update(a *App, msg tea.Msg) tea.Cmd {
 }
 
 func (m *mainView) key(a *App, msg tea.KeyPressMsg) tea.Cmd {
+	return tea.Batch(m.noteInput(a), m.keyPress(a, msg))
+}
+
+func (m *mainView) keyPress(a *App, msg tea.KeyPressMsg) tea.Cmd {
 	k := a.keys
 	m.notice = ""
 
@@ -928,6 +979,7 @@ func (m *mainView) openPalette(a *App) tea.Cmd {
 // click focuses the pane under the pointer, and opens a chat clicked in the
 // list.
 func (m *mainView) click(a *App, mouse tea.Mouse) tea.Cmd {
+	m.lastInput = a.opts.Now()
 	if m.overlay != overlayNone || mouse.Button != tea.MouseLeft {
 		return nil
 	}
@@ -1186,12 +1238,20 @@ func (m *mainView) detailsView(a *App, w int) string {
 		b.WriteString(t.text.Width(w-1).PaddingLeft(1).Render(c.Topic) + "\n")
 	}
 	b.WriteString("\n")
-	if c.Kind == DirectChat {
+	if c.Kind == DirectChat && len(c.Members) == 1 {
+		profileBlock(&b, t, c.Members[0], w)
+	} else if c.Kind == DirectChat {
 		line(t.dim.Render("Handle"))
 	} else {
 		line(t.dim.Render("Members"))
 	}
 	for _, mb := range c.Members {
+		if c.Kind == DirectChat {
+			if len(c.Members) != 1 {
+				line(t.muted.Render("@" + mb.Handle))
+			}
+			continue
+		}
 		label := mb.Name
 		if label == "" {
 			label = "@" + mb.Handle
@@ -1202,10 +1262,11 @@ func (m *mainView) detailsView(a *App, w int) string {
 		case mb.Roles != "":
 			label += " (" + mb.Roles + ")"
 		}
-		if c.Kind != DirectChat {
-			line(t.text.Render(label))
+		if p := presenceWord(mb.Presence); p != "" {
+			label += " · " + p
 		}
-		if mb.Name != "" || c.Kind == DirectChat {
+		line(t.text.Render(label))
+		if mb.Name != "" {
 			line(t.muted.Render("@" + mb.Handle))
 		}
 	}
@@ -1236,6 +1297,86 @@ func (m *mainView) detailsView(a *App, w int) string {
 	return b.String()
 }
 
+// profileBlock shows someone's public profile and presence in the details
+// pane (§13): their initials in place of a picture, which terminals can't
+// show well, their display name and handle, presence and status, bio, and
+// links with their full domain.
+func profileBlock(b *strings.Builder, t *theme, mb Member, w int) {
+	line := func(s string) { b.WriteString(" " + ansi.Truncate(s, w-2, "…") + "\n") }
+	pic := t.avatar.Render(" " + initials(mb.Name, mb.Handle) + " ")
+	name := mb.Name
+	if name == "" {
+		name = "@" + mb.Handle
+	}
+	line(pic + " " + t.bold.Render(name))
+	if mb.Name != "" {
+		line(strings.Repeat(" ", lipgloss.Width(pic)+1) + t.muted.Render("@"+mb.Handle))
+	}
+	if p := presenceWord(mb.Presence); p != "" {
+		mark := "●"
+		if mb.Presence == "offline" {
+			mark = "○"
+		}
+		line(t.muted.Render(mark + " " + p))
+	}
+	if mb.Status != "" {
+		b.WriteString(t.text.Width(w-1).PaddingLeft(1).Render("“"+mb.Status+"”") + "\n")
+	}
+	if mb.Bio != "" {
+		b.WriteString("\n")
+		line(t.dim.Render("Bio"))
+		b.WriteString(t.text.Width(w-1).PaddingLeft(1).Render(mb.Bio) + "\n")
+	}
+	if len(mb.Links) > 0 {
+		b.WriteString("\n")
+		line(t.dim.Render("Links"))
+		for _, l := range mb.Links {
+			// The full domain first, so a link can't pass for another
+			// site (§13.1).
+			host := strings.TrimPrefix(l, "https://")
+			host, _, _ = strings.Cut(host, "/")
+			line(t.text.Render(host))
+			line(t.muted.Render(l))
+		}
+	}
+}
+
+// initials are up to two letters for someone's picture: from their
+// display name's first two words, or their handle's first letter.
+func initials(name, handle string) string {
+	var out []rune
+	for _, f := range strings.Fields(name) {
+		r := []rune(f)
+		if len(r) > 0 && len(out) < 2 {
+			out = append(out, unicode.ToUpper(r[0]))
+		}
+	}
+	if len(out) == 0 && handle != "" {
+		out = append(out, unicode.ToUpper([]rune(handle)[0]))
+	}
+	if len(out) == 0 {
+		return "?"
+	}
+	return string(out)
+}
+
+// presenceWord is a presence state in words (§13.2).
+func presenceWord(state string) string {
+	switch state {
+	case "available":
+		return "Available"
+	case "online":
+		return "Online"
+	case "away":
+		return "Away"
+	case "busy":
+		return "Busy"
+	case "offline":
+		return "Offline"
+	}
+	return ""
+}
+
 func plural(n int, one, many string) string {
 	if n == 1 {
 		return "1 " + one
@@ -1256,6 +1397,12 @@ func (m *mainView) statusBar(a *App) string {
 		left = seg(t.status, " ") + seg(t.statusValue, "@"+a.identity.Handle)
 		if !m.layout.narrow && a.identity.Homeserver != "" {
 			left += seg(t.statusKey, "  on ") + seg(t.status, a.identity.Homeserver)
+		}
+		if p := a.identity.Presence; p != "" && p != "online" || a.identity.Away {
+			if a.identity.Away {
+				p = "away"
+			}
+			left += seg(t.status, "  "+presenceWord(p))
 		}
 		if a.opts.Demo {
 			left += seg(t.status, "  ") + seg(t.away.Background(t.p.panel), "Demo")

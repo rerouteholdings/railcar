@@ -119,15 +119,7 @@ func (b *Backend) start(c *client.Client) (ui.Identity, error) {
 	b.pumpDone = make(chan struct{})
 	b.mu.Unlock()
 	go b.pump(eng, b.pumpDone)
-	return b.identity(c), nil
-}
-
-func (b *Backend) identity(c *client.Client) ui.Identity {
-	name := ""
-	if d, ok := c.Chain().State.Device(c.DeviceKey()); ok {
-		name = d.Name
-	}
-	return ui.Identity{Handle: c.Handle(), Homeserver: c.Server(), Device: name}
+	return identityOf(eng, c), nil
 }
 
 // engine returns the running chat layer, or an error when signed out.
@@ -331,6 +323,8 @@ func (b *Backend) pump(eng *chat.Engine, done chan struct{}) {
 			}
 		case chat.EventTyping:
 			b.emit(ui.Typing{Chat: ev.ChatID, Who: member(eng, ev.Who), On: ev.On})
+		case chat.EventPresence:
+			b.presenceEvent(eng, ev.Who)
 		}
 	}
 }
@@ -368,10 +362,6 @@ func requestChat(c chat.Contact) (ui.Chat, bool) {
 	return rc, true
 }
 
-func member(eng *chat.Engine, id string) ui.Member {
-	return ui.Member{Handle: eng.Handle(id)}
-}
-
 // uiChat is a chat as the interface shows it.
 func (b *Backend) uiChat(eng *chat.Engine, c chat.Chat) ui.Chat {
 	me := eng.Client().ID()
@@ -399,7 +389,12 @@ func (b *Backend) uiChat(eng *chat.Engine, c chat.Chat) ui.Chat {
 	if c.Kind == chat.KindGroup && c.Name != "" {
 		out.Title = c.Name
 	} else if c.Peer != "" {
+		// The display name, when they have one; the handle shows under
+		// it (§13.1).
 		out.Title = "@" + eng.Handle(c.Peer)
+		if p, ok := eng.ProfileOf(c.Peer); ok && p.Name != "" {
+			out.Title = p.Name
+		}
 	} else {
 		names := make([]string, 0, len(out.Members))
 		for _, m := range out.Members {

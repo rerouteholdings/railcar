@@ -116,6 +116,9 @@ func (b *Backend) Act(ctx context.Context, chatID string, a ui.Action) (string, 
 }
 
 func act(ctx context.Context, eng *chat.Engine, chatID string, a ui.Action) (string, error) {
+	if msg, ok, err := actPeople(ctx, eng, a); ok {
+		return msg, err
+	}
 	c, _ := eng.Chat(chatID)
 	server := c.Community
 	who := func() (string, error) {

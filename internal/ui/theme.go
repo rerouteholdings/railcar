@@ -64,6 +64,7 @@ type theme struct {
 
 	text, muted, dim, accent, bold lipgloss.Style
 	ok, away, danger               lipgloss.Style
+	avatar                         lipgloss.Style
 
 	pane, paneFocused lipgloss.Style
 	title             lipgloss.Style
@@ -115,6 +116,10 @@ func newTheme(dark, noColor bool) *theme {
 	t.ok = s().Foreground(p.ok)
 	t.away = s().Foreground(p.away)
 	t.danger = s().Foreground(p.danger)
+	t.avatar = s().Foreground(p.onAccent).Background(p.line2).Bold(true)
+	if noColor {
+		t.avatar = s().Reverse(true).Bold(true)
+	}
 
 	// Square corners everywhere. Without color, the focused pane gets a
 	// thick border, so focus doesn't depend on color.

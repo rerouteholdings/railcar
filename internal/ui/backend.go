@@ -251,6 +251,12 @@ type Identity struct {
 	DisplayName string
 	// Device is this device's name, such as "Railcar on kat-laptop".
 	Device string
+	// Presence is the presence state the user chose, and Status their
+	// status message (§13.2). Away is set while Railcar holds them away
+	// for being idle.
+	Presence string
+	Status   string
+	Away     bool
 }
 
 // SignUpRequest is what the user enters to create an identity.
@@ -306,8 +312,20 @@ const (
 
 // Member is one person in a chat.
 type Member struct {
+	// Name is the display name on their public profile, which may be
+	// empty (§13.1).
 	Name   string
 	Handle string
+	// Presence is their presence state, such as "away", and Status their
+	// status message, as their homeserver last said; both are empty when
+	// it hasn't (§13.2). Only mutual contacts get presence.
+	Presence string
+	Status   string
+	// Bio and Links are from their public profile, and Picture says
+	// whether it has a profile picture (§13.1).
+	Bio     string
+	Links   []string
+	Picture bool
 	// Admin marks a group chat's admin (§11.8).
 	Admin bool
 	// Roles names a community member's roles (§16.3).
@@ -454,10 +472,15 @@ type Typing struct {
 // such as when another device removes it (§7.6).
 type SignedOut struct{ Reason string }
 
-func (StreamChanged) event()  {}
-func (ChatChanged) event()    {}
-func (ChatRemoved) event()    {}
-func (MessageAdded) event()   {}
-func (MessageChanged) event() {}
-func (SignedOut) event()      {}
-func (Typing) event()         {}
+func (StreamChanged) event()   {}
+func (ChatChanged) event()     {}
+func (ChatRemoved) event()     {}
+func (MessageAdded) event()    {}
+func (MessageChanged) event()  {}
+func (SignedOut) event()       {}
+func (Typing) event()          {}
+func (IdentityChanged) event() {}
+
+// IdentityChanged reports a change to the signed-in identity as shown: its
+// display name, presence, or status message.
+type IdentityChanged struct{ Identity Identity }

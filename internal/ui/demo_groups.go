@@ -70,6 +70,9 @@ func (d *DemoBackend) Act(_ context.Context, chat string, a Action) (string, err
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	c := d.chats[chat]
+	if line, ok := d.actPeople(a); ok {
+		return line, nil
+	}
 	switch a.Kind {
 	case "create-community", "join-community":
 		return "", errors.New("The demo has one community. Communities need a community server")
@@ -116,4 +119,39 @@ func (d *DemoBackend) Act(_ context.Context, chat string, a Action) (string, err
 	d.systemLine(chat, line)
 	d.emit(ChatChanged{*c})
 	return line, nil
+}
+
+// actPeople runs the profile and presence actions in the demo (§13), and
+// reports whether a.Kind was one of them. The caller holds d.mu.
+func (d *DemoBackend) actPeople(a Action) (string, bool) {
+	id := d.identity
+	if id == nil {
+		return "", false
+	}
+	changed := func(line string) (string, bool) {
+		d.emit(IdentityChanged{Identity: *id})
+		return line, true
+	}
+	switch a.Kind {
+	case "set-presence":
+		id.Presence, id.Away = strings.ToLower(strings.TrimSpace(a.Arg)), false
+		if s := strings.TrimSpace(a.Arg2); s != "" {
+			id.Status = s
+		}
+		return changed("You're " + id.Presence + " to your contacts")
+	case "set-status":
+		id.Status = strings.TrimSpace(a.Arg)
+		return changed("Your contacts see your status message")
+	case "auto-away":
+		id.Away = a.Arg == "on" && (id.Presence == "online" || id.Presence == "available")
+		return changed("")
+	case "set-name":
+		id.DisplayName = strings.TrimSpace(a.Arg)
+		return changed("Anyone can see your display name now")
+	case "set-bio", "set-links", "set-avatar":
+		return "The demo doesn't publish profiles", true
+	case "show-profile":
+		return "Name: " + id.DisplayName + ", presence: " + id.Presence, true
+	}
+	return "", false
 }

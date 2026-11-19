@@ -49,6 +49,8 @@ const (
 	// EventStopped: the stream stopped for good, such as when this device
 	// was removed from the identity (§7.6).
 	EventStopped
+	// EventPresence: Who's presence or public profile changed (§13).
+	EventPresence
 )
 
 // Event is something that happened.
@@ -103,6 +105,9 @@ type Engine struct {
 	crunMu   sync.Mutex
 	cruns    map[string]bool
 
+	// ppl holds presence and public profiles (§13).
+	ppl people
+
 	evMu   sync.Mutex
 	events chan Event
 	closed bool
@@ -128,7 +133,7 @@ func New(c *client.Client, opts Options) (*Engine, error) {
 	if log == nil {
 		log = slog.New(slog.DiscardHandler)
 	}
-	return &Engine{
+	e := &Engine{
 		c: c, dev: dev, log: log, st: st,
 		key:      ed25519.NewKeyFromSeed(info.MsgKeySeed),
 		leaves:   map[string]bool{},
@@ -138,7 +143,9 @@ func New(c *client.Client, opts Options) (*Engine, error) {
 		cruns:    map[string]bool{},
 		joinCode: map[string][]byte{},
 		events:   make(chan Event, 256),
-	}, nil
+	}
+	e.loadPeople()
+	return e, nil
 }
 
 // Client returns the protocol client.
@@ -231,6 +238,14 @@ func (e *Engine) Run(ctx context.Context) error {
 		case client.EventConnected:
 			e.emit(Event{Kind: EventStream, Stream: ev.Kind})
 			go e.catchUpGroups(ctx)
+			go func() {
+				e.announcePresence(ctx)
+				e.fetchMissingProfiles(ctx)
+			}()
+		case client.EventPresence:
+			if p, err := client.ParsePresence(ev.Frame); err == nil {
+				e.presenceFrame(ctx, p)
+			}
 		case client.EventDisconnected, client.EventError:
 			e.emit(Event{Kind: EventStream, Stream: ev.Kind, Err: ev.Err})
 		case client.EventItem:

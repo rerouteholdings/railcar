@@ -93,13 +93,15 @@ var demoKat = Identity{
 	Homeserver:  "chat.example.com",
 	DisplayName: "Kat",
 	Device:      "Railcar on this computer",
+	Presence:    "online",
 }
 
 var (
-	demoRavi  = Member{Name: "Ravi Shah", Handle: "ravi.chat.example.com"}
-	demoMia   = Member{Name: "Mia Lund", Handle: "mia.example.org"}
-	demoOskar = Member{Name: "Oskar Berg", Handle: "oskar.chat.example.net"}
-	demoNoor  = Member{Name: "Noor Haddad", Handle: "noor.example.net"}
+	demoRavi = Member{Name: "Ravi Shah", Handle: "ravi.chat.example.com", Presence: "busy", Status: "Fixing the night bus timetable",
+		Bio: "Transit planner. Ask me about headways.", Links: []string{"https://ravi.example.com/timetables"}, Picture: true}
+	demoMia   = Member{Name: "Mia Lund", Handle: "mia.example.org", Presence: "available", Bio: "Book club organizer"}
+	demoOskar = Member{Name: "Oskar Berg", Handle: "oskar.chat.example.net", Presence: "away", Status: "Back Monday"}
+	demoNoor  = Member{Name: "Noor Haddad", Handle: "noor.example.net", Presence: "offline"}
 )
 
 // seed fills in the made-up chats.

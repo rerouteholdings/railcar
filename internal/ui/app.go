@@ -250,6 +250,9 @@ func (a *App) handleEvent(e Event) tea.Cmd {
 			return a.startSpinner()
 		}
 		return nil
+	case IdentityChanged:
+		a.identity = e.Identity
+		return nil
 	case SignedOut:
 		text := "This device was signed out."
 		if e.Reason != "" {
