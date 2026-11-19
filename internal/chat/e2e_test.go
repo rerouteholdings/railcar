@@ -469,3 +469,56 @@ func TestE2ERailcar(t *testing.T) {
 		return ev.Kind == EventMessage && ev.New && ev.Message.Body == "and back"
 	})
 }
+
+// TestE2EInteropDecline has each side decline the other's request (§9.3).
+func TestE2EInteropDecline(t *testing.T) {
+	bin := testnet.Rerouted(t)
+	lee := newRerouteCLI(t, "lee")
+	o := testnet.Start(t, bin, "a.test")
+	ctx := context.Background()
+	lee.run("v2", "register", "lee", "--server", o["a.test"], "--invite", testnet.SignupCode)
+	kat := newRailcar(t, o, "a.test", "kat")
+
+	// Lee declines Kat's request; Kat sees it.
+	c, err := kat.e.Add(ctx, lastLine(lee.run("v2", "invite")))
+	if err != nil {
+		t.Fatal(err)
+	}
+	settle()
+	lee.run("sync")
+	lee.run("decline", "kat.a.test")
+	settle()
+	kat.sync()
+	for _, k := range kat.e.Contacts() {
+		if k.ID == c.ID && k.State != StateDeclined {
+			t.Errorf("after Lee declined: %+v", k)
+		}
+	}
+
+	// Kat declines Max's request; Max's app is told.
+	max := newRerouteCLI(t, "max")
+	max.run("v2", "register", "max", "--server", o["a.test"], "--invite", testnet.SignupCode)
+	code, err := kat.e.Invite(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	max.run("add", code)
+	settle()
+	kat.sync()
+	var maxID string
+	for _, k := range kat.e.Contacts() {
+		if k.Handle == "max.a.test" && k.State == StatePendingIn {
+			maxID = k.ID
+		}
+	}
+	if maxID == "" {
+		t.Fatal("no request from Max")
+	}
+	if err := kat.e.Decline(ctx, maxID); err != nil {
+		t.Fatal(err)
+	}
+	settle()
+	if out := max.run("sync"); !strings.Contains(strings.ToLower(out), "declined") {
+		t.Error("Max's app didn't say Kat declined")
+	}
+}
