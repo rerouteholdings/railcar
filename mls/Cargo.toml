@@ -1,0 +1,31 @@
+[package]
+name = "tieroute-mls"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.85"
+license = "Apache-2.0"
+description = "A C interface to OpenMLS with the hybrid post-quantum ciphersuite, for Railcar"
+publish = false
+
+[lib]
+name = "tieroute_mls"
+crate-type = ["staticlib", "rlib"]
+
+[dependencies]
+openmls = { version = "=0.9.2", features = ["draft-ietf-mls-pq-ciphersuites"] }
+openmls_rust_crypto = { version = "=0.6.0", features = ["draft-ietf-mls-pq-ciphersuites"] }
+openmls_basic_credential = { version = "=0.6.0", features = ["draft-ietf-mls-pq-ciphersuites"] }
+openmls_traits = { version = "=0.6.0", features = ["draft-ietf-mls-pq-ciphersuites"] }
+openmls_memory_storage = { version = "=0.6.0", features = ["draft-ietf-mls-pq-ciphersuites"] }
+tls_codec = "0.5"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+base64 = "0.22"
+ed25519-dalek = "2"
+
+[profile.release]
+opt-level = "s"
+lto = true
+codegen-units = 1
+strip = true
+panic = "unwind"
