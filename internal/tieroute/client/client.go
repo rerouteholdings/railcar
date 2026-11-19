@@ -152,7 +152,7 @@ func (c *Client) load(st savedState) error {
 	return nil
 }
 
-// save writes the main record. The caller holds c.mu.
+// saveLocked writes the main record. The caller holds c.mu.
 func (c *Client) saveLocked() error {
 	c.state.Chain = c.chain.Entries
 	ms, es := c.device.Key.Seeds()

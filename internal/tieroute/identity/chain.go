@@ -237,7 +237,7 @@ func (e *Entry) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
-// Device is one current device in a chain's state.
+// DeviceInfo is one current device in a chain's state.
 type DeviceInfo struct {
 	Key      []byte // the device key: the Ed25519 component
 	Pub      []byte // the composite public key
