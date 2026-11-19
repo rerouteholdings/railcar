@@ -416,3 +416,15 @@ func (c *Client) DeleteProfile() error {
 // their own records in it, under names that don't start with "identity"
 // or "chain.".
 func (c *Client) Profile() *store.Profile { return c.profile }
+
+// SignAsDevice signs body as type t with this device's composite key. The
+// envelope's k is the key's Ed25519 component, so a verifier finds the
+// composite key in the identity's chain (§3.2.2). Add approvals (§11.8),
+// community chain entries (§16.2), and member lists (§16.6) are signed this
+// way.
+func (c *Client) SignAsDevice(t string, body any) (wire.Signed, error) {
+	return sig.SignDevice(c.device.Key, t, body)
+}
+
+// DevicePublic returns this device's composite public key.
+func (c *Client) DevicePublic() []byte { return c.device.Key.Public() }

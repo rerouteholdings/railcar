@@ -160,7 +160,7 @@ func (e *Engine) oldCommit(ctx context.Context, ch *Chat, b buffered) error {
 	if !ok || bytes.Equal(prev, h[:]) || b.Receipt == nil {
 		return nil
 	}
-	if err := e.checkReceipt(ctx, ch, *b.Receipt, mustB64(ch.ID), b.Epoch, b.Data); err != nil {
+	if _, err := e.checkReceipt(ctx, ch, *b.Receipt, mustB64(ch.ID), b.Epoch, b.Data); err != nil {
 		return nil // not from the hub; dropped
 	}
 	ch.Stopped = "the hub sent members different changes; re-create the chat"
@@ -179,7 +179,8 @@ func (e *Engine) processCommit(ctx context.Context, ch *Chat, b buffered) error 
 		return errors.New("chat: a commit without a receipt")
 	}
 	gid := mustB64(ch.ID)
-	if err := e.checkReceipt(ctx, ch, *b.Receipt, gid, b.Epoch, b.Data); err != nil {
+	receipt, err := e.checkReceipt(ctx, ch, *b.Receipt, gid, b.Epoch, b.Data)
+	if err != nil {
 		return err
 	}
 	g := e.dev.mls.Group(gid)
@@ -203,7 +204,7 @@ func (e *Engine) processCommit(ctx context.Context, ch *Chat, b buffered) error 
 		e.dev.Revert()
 		return errors.New("chat: a commit delivery that isn't a commit")
 	}
-	next, verdict, err := e.judgeCommit(ctx, ch, before, p)
+	j, verdict, err := e.judgeCommit(ctx, ch, before, p, receipt.TS)
 	switch verdict {
 	case identity.Pending:
 		e.dev.Revert()
@@ -234,30 +235,57 @@ func (e *Engine) processCommit(ctx context.Context, ch *Chat, b buffered) error 
 	}
 	h := sha256.Sum256(b.Data)
 	ch.applied(b.Epoch, h[:])
-	ch.Epoch, ch.Hub, ch.Members = after.Epoch, next.Hub, members(after)
-	if !after.Active {
-		ch.Stopped = "this device was removed from the chat"
-	}
+	oldMembers, oldAdmins := ch.Members, ch.Admins
+	ch.Epoch, ch.Hub, ch.Members = after.Epoch, j.next.Hub, members(after)
+	ch.Admins = slices.Clone(j.next.Admins)
 	if ch.Hold && !e.removalWaiting(after) {
 		ch.Hold = false
+	}
+	if ch.Kind == KindGroup {
+		// Requests for people who are in the group now are done.
+		ch.Requests = slices.DeleteFunc(ch.Requests, func(r AddPending) bool { return slices.Contains(ch.Members, r.Who) })
 	}
 	if err := e.save(); err != nil {
 		return err
 	}
-	if after.Active {
+	if ch.Kind == KindGroup {
+		e.membershipLines(ch, j.committer, oldMembers, ch.Members, j.added, j.leaving)
+		if after.Active {
+			e.adminLines(ch, oldAdmins, ch.Admins)
+		}
+	}
+	if !after.Active {
+		if ch.Kind == KindGroup {
+			e.leftGroup(ctx, ch, "You're no longer in this group")
+			return nil
+		}
+		ch.Stopped = "this device was removed from the chat"
+		e.save()
+	} else {
 		e.deviceLines(ch, before, after)
 	}
 	e.emit(Event{Kind: EventChat, Chat: ptr(ch.public())})
 	return nil
 }
 
+// judged is what judging a commit found, for the system lines and the
+// chat's record once it's applied.
+type judged struct {
+	next      *GroupExt
+	committer string
+	added     []string        // new people
+	removed   []string        // people the commit takes out
+	leaving   map[string]bool // of removed, those who left on their own
+}
+
 // judgeCommit judges a staged commit by the rules this client implements
-// for direct chats: every new or updated leaf checks out (§7.1),
-// tieroute_group stays well formed and follows §7.1's basis and floor
-// rules, and the chat keeps exactly its two identities (§11.3). It
-// returns the new tieroute_group.
-func (e *Engine) judgeCommit(ctx context.Context, ch *Chat, before *mls.State, p *mls.Processed) (*GroupExt, identity.Verdict, error) {
-	bad := func(format string, args ...any) (*GroupExt, identity.Verdict, error) {
+// for direct chats and group chats: every new or updated leaf checks out
+// (§7.1); the commit binds the history its scope needs (§7.1); a group
+// chat's admin rules hold (§11.8); tieroute_group stays well formed and
+// follows the floor rule; and the group stays within its size (§11.3,
+// §11.10). receiptTS is the hub receipt's ts.
+func (e *Engine) judgeCommit(ctx context.Context, ch *Chat, before *mls.State, p *mls.Processed, receiptTS int64) (*judged, identity.Verdict, error) {
+	bad := func(format string, args ...any) (*judged, identity.Verdict, error) {
 		return nil, identity.Invalid, fmt.Errorf(format, args...)
 	}
 	data, _ := before.Extension(ExtGroup)
@@ -265,7 +293,7 @@ func (e *Engine) judgeCommit(ctx context.Context, ch *Chat, before *mls.State, p
 	if err != nil {
 		return bad("the group's tieroute_group: %v", err)
 	}
-	next := old
+	var next *GroupExt
 	if data, ok := p.Commit.Extension(ExtGroup); ok {
 		if next, err = ParseGroupExt(data); err != nil {
 			return bad("%v", err)
@@ -276,6 +304,9 @@ func (e *Engine) judgeCommit(ctx context.Context, ch *Chat, before *mls.State, p
 	if next.Kind != old.Kind {
 		return bad("the commit changes the group's kind")
 	}
+	if !bytes.Equal(next.Replaces, old.Replaces) {
+		return bad("the commit changes replaces")
+	}
 	committer, ok := before.Member(p.Sender.Index)
 	if p.Sender.Kind != "member" || !ok {
 		return bad("a commit from outside the group")
@@ -284,15 +315,28 @@ func (e *Engine) judgeCommit(ctx context.Context, ch *Chat, before *mls.State, p
 	if err != nil {
 		return bad("%v", err)
 	}
+	group := old.Kind == KindGroup
+	admin := group && slices.Contains(old.Admins, committerID)
 
-	// What the commit does, for its scope (§7.1).
+	// Who's in the group before the commit.
+	beforeIDs := map[string]bool{}
+	leafID := map[uint32]string{}
+	for _, m := range before.Members {
+		if id, _, err := parseCredential(m.Identity); err == nil {
+			beforeIDs[id] = true
+			leafID[m.LeafIndex] = id
+		}
+	}
+
+	// What the commit does.
 	type keyCheck struct {
 		id  string
 		key []byte
 	}
-	var mustBe []keyCheck
+	var addKeys []keyCheck
 	var leaves []*mls.LeafInfo
 	adds := map[string]bool{}
+	newPeople := map[string]bool{}
 	for _, pr := range p.Commit.Proposals {
 		switch pr.Kind {
 		case "add":
@@ -303,9 +347,12 @@ func (e *Engine) judgeCommit(ctx context.Context, ch *Chat, before *mls.State, p
 			if err != nil {
 				return bad("%v", err)
 			}
-			mustBe = append(mustBe, keyCheck{id, dev})
+			addKeys = append(addKeys, keyCheck{id, dev})
 			leaves = append(leaves, &pr.KeyPackage.Leaf)
 			adds[id] = true
+			if !beforeIDs[id] {
+				newPeople[id] = true
+			}
 		case "update":
 			if pr.Leaf != nil {
 				leaves = append(leaves, pr.Leaf)
@@ -321,12 +368,21 @@ func (e *Engine) judgeCommit(ctx context.Context, ch *Chat, before *mls.State, p
 			return bad("the committer's new leaf names another device")
 		}
 	}
-	// Removes of another device's leaf: the commit has to bind a history
-	// of that identity in which the key isn't a device (§11.9). Nobody in
-	// a direct chat is an admin.
-	var removedKeys []keyCheck
+	// Removes. A leave proposal, committed by reference, is the device
+	// leaving, not the committer removing it (§11.1, §11.7). Another
+	// Remove needs the committer's authority: an admin removing someone
+	// else, or a commit binding a history in which the key isn't a device
+	// (§11.9).
+	removedIdx := map[uint32]bool{}
+	var bindRemoves []keyCheck
+	adminRemoves := false
+	leaveIDs := map[string]bool{}
 	for _, pr := range p.Commit.Proposals {
-		if pr.Kind != "remove" || pr.Removed == nil || *pr.Removed == p.Sender.Index {
+		if pr.Kind != "remove" || pr.Removed == nil {
+			continue
+		}
+		removedIdx[*pr.Removed] = true
+		if *pr.Removed == p.Sender.Index {
 			continue
 		}
 		m, ok := before.Member(*pr.Removed)
@@ -337,25 +393,86 @@ func (e *Engine) judgeCommit(ctx context.Context, ch *Chat, before *mls.State, p
 		if err != nil {
 			return bad("%v", err)
 		}
-		removedKeys = append(removedKeys, keyCheck{id, dev})
+		if pr.ByReference && pr.Sender.Kind == "member" && leafID[pr.Sender.Index] == id {
+			leaveIDs[id] = true
+			continue
+		}
+		if admin && id != committerID {
+			adminRemoves = true
+			continue
+		}
+		bindRemoves = append(bindRemoves, keyCheck{id, dev})
 	}
+
+	// Who's in the group after it.
+	after := map[string]bool{}
+	leafCount := 0
+	for _, m := range before.Members {
+		if !removedIdx[m.LeafIndex] {
+			if id, _, err := parseCredential(m.Identity); err == nil {
+				after[id] = true
+				leafCount++
+			}
+		}
+	}
+	for _, k := range addKeys {
+		after[k.id] = true
+		leafCount++
+	}
+	if old.Kind == KindDirect && (len(after) > 2 || !after[e.c.ID()] && !p.Commit.SelfRemoved) {
+		return bad("a direct chat with someone else in it")
+	}
+	if len(after) > MaxGroupPeople || leafCount > MaxGroupLeaves {
+		return bad("the group would have more than 25 people or 250 leaves (§11.10)")
+	}
+	var removedPeople []string
+	for id := range beforeIDs {
+		if !after[id] {
+			removedPeople = append(removedPeople, id)
+		}
+	}
+	slices.Sort(removedPeople)
+
+	// An approval, for a non-admin adding a new person (§11.8).
+	var appr *AddApproval
+	if group && !admin && len(newPeople) > 0 {
+		if len(newPeople) != 1 || next.Approval == nil {
+			return bad("a member who isn't an admin added someone without an approval")
+		}
+		a, err := parseApproval(*next.Approval)
+		if err != nil {
+			return bad("%v", err)
+		}
+		appr = &a
+	}
+	adminsChanged := !sameSet(old.Admins, next.Admins)
+	authority := admin && (len(newPeople) > 0 || adminRemoves || adminsChanged) || next.Hub != old.Hub
+
+	// The commit's scope (§7.1).
 	inScope := map[string]bool{}
 	for id := range adds {
 		inScope[id] = true
 	}
-	for _, k := range removedKeys {
+	if appr != nil {
+		inScope[appr.By] = true
+	}
+	for _, k := range bindRemoves {
 		inScope[k.id] = true
 	}
-	if len(adds) > 0 || len(removedKeys) > 0 || next.Hub != old.Hub {
+	mustBe := slices.Clone(addKeys)
+	if len(inScope) > 0 || authority {
 		inScope[committerID] = true
 		mustBe = append(mustBe, keyCheck{committerID, committerDev})
 	}
 
 	// The chain history the commit binds (§7.1).
 	bound := map[string]*identity.Chain{}
+	// A basis left as it was, in a commit whose scope is empty, binds
+	// nothing, and isn't judged again (§7.1).
+	bindsNothing := len(inScope) == 0 && bytes.Equal(wire.MustJCS(next.Basis), wire.MustJCS(old.Basis))
 	for id, br := range next.Basis {
-		if bytes.Equal(wire.MustJCS(br), wire.MustJCS(old.Basis[id])) && len(inScope) == 0 {
-			continue // left as it was: it binds nothing (§7.1)
+		if bindsNothing {
+			break
 		}
 		var floor *identity.Bound
 		if f, ok := old.Heads[id]; ok {
@@ -374,7 +491,7 @@ func (e *Engine) judgeCommit(ctx context.Context, ch *Chat, before *mls.State, p
 			if latched {
 				return bad("the basis leaves out %s, who's in the commit's scope", id)
 			}
-			// A group that hasn't latched: Reroute's direct chats don't bind
+			// A group that hasn't latched: Reroute's chats don't bind
 			// history yet, so judge on this device's copy instead.
 			c, err := e.fetchChain(ctx, id, true)
 			if err != nil {
@@ -384,7 +501,7 @@ func (e *Engine) judgeCommit(ctx context.Context, ch *Chat, before *mls.State, p
 		}
 	}
 	for id := range next.Basis {
-		if !inScope[id] && !slices.Contains(ch.Members, id) && !adds[id] {
+		if !bindsNothing && !inScope[id] && !after[id] {
 			return bad("the basis names %s, who isn't a member", id)
 		}
 	}
@@ -394,7 +511,7 @@ func (e *Engine) judgeCommit(ctx context.Context, ch *Chat, before *mls.State, p
 			return bad("a key that isn't a device of %s in the history the commit binds", k.id)
 		}
 	}
-	for _, k := range removedKeys {
+	for _, k := range bindRemoves {
 		c := bound[k.id]
 		if c == nil || c.State.IsDevice(k.key) {
 			return bad("a Remove of a device that's still %s's in the history the commit binds", k.id)
@@ -403,6 +520,11 @@ func (e *Engine) judgeCommit(ctx context.Context, ch *Chat, before *mls.State, p
 			if _, ever := devicePub(c, k.key, true); !ever {
 				return bad("a Remove of a key that was never %s's device", k.id)
 			}
+		}
+	}
+	if appr != nil {
+		if err := checkApproval(*next.Approval, *appr, mustB64(ch.ID), old, next, newPeople, before.Epoch, receiptTS, bound[appr.By]); err != nil {
+			return bad("%v", err)
 		}
 	}
 	// Leaves: every new or updated leaf's msg-key checks out.
@@ -421,27 +543,9 @@ func (e *Engine) judgeCommit(ctx context.Context, ch *Chat, before *mls.State, p
 			return bad("%v", err)
 		}
 	}
-	// Who's in the group after the commit.
-	removed := map[uint32]bool{}
-	for _, pr := range p.Commit.Proposals {
-		if pr.Kind == "remove" && pr.Removed != nil {
-			removed[*pr.Removed] = true
-		}
-	}
-	after := map[string]bool{}
-	for _, m := range before.Members {
-		if !removed[m.LeafIndex] {
-			if id, _, err := parseCredential(m.Identity); err == nil {
-				after[id] = true
-			}
-		}
-	}
-	for id := range adds {
-		after[id] = true
-	}
-	if old.Kind == KindDirect && (len(after) > 2 || !after[e.c.ID()] && !p.Commit.SelfRemoved) {
-		return bad("a direct chat with someone else in it")
-	}
+
+	// since: exactly the members, unchanged for those who stay, and the
+	// new epoch for new people (§11.8).
 	for id := range after {
 		if _, ok := next.Since[id]; !ok {
 			return bad("since leaves out %s", id)
@@ -457,6 +561,18 @@ func (e *Engine) judgeCommit(ctx context.Context, ch *Chat, before *mls.State, p
 			return bad("the commit changes when %s joined", id)
 		}
 	}
+	for id := range newPeople {
+		if next.Since[id] != before.Epoch+1 && group {
+			return bad("since for %s isn't the epoch the commit creates", id)
+		}
+	}
+
+	if group {
+		if err := checkGroupChange(old, next, admin, after, appr, receiptTS); err != nil {
+			return bad("%v", err)
+		}
+	}
+
 	// The floor follows mechanically (§7.1).
 	if latched || len(next.Heads) > 0 {
 		want := map[string]ChainRef{}
@@ -481,15 +597,111 @@ func (e *Engine) judgeCommit(ctx context.Context, ch *Chat, before *mls.State, p
 			}
 		}
 	}
-	return next, identity.Valid, nil
+	j := &judged{next: next, committer: committerID, removed: removedPeople, leaving: map[string]bool{}}
+	for id := range newPeople {
+		j.added = append(j.added, id)
+	}
+	slices.Sort(j.added)
+	for _, id := range removedPeople {
+		if leaveIDs[id] {
+			j.leaving[id] = true
+		}
+	}
+	return j, identity.Valid, nil
+}
+
+// checkGroupChange checks a group chat's tieroute_group against the admin
+// rules (§11.8): admins are members, and a group never has none; only an
+// admin changes admins or the hub; and used and approval change only as
+// approvals allow.
+func checkGroupChange(old, next *GroupExt, admin bool, after map[string]bool, appr *AddApproval, receiptTS int64) error {
+	for _, a := range next.Admins {
+		if !after[a] {
+			return fmt.Errorf("admins lists %s, who isn't a member", a)
+		}
+	}
+	if len(next.Admins) != len(uniq(next.Admins)) {
+		return errors.New("admins lists someone twice")
+	}
+	if len(after) > 0 && len(next.Admins) == 0 {
+		return errors.New("the commit leaves the group without an admin")
+	}
+	if !admin {
+		var want []string
+		for _, a := range old.Admins {
+			if after[a] {
+				want = append(want, a)
+			}
+		}
+		if len(want) == 0 && len(after) > 0 {
+			want = []string{pickAdmin(next.Since, after)}
+		}
+		if !sameSet(want, next.Admins) {
+			return errors.New("a member who isn't an admin changed admins")
+		}
+		if next.Hub != old.Hub {
+			return errors.New("a member who isn't an admin moved the hub")
+		}
+	}
+	// used: entries stay until their time has passed, and the only new
+	// one is the approval this commit uses (§11.8).
+	for id, ts := range old.Used {
+		if _, ok := next.Used[id]; !ok && ts >= receiptTS {
+			return errors.New("the commit drops a used approval that hasn't expired")
+		}
+	}
+	for id, ts := range next.Used {
+		if ots, ok := old.Used[id]; ok {
+			if ots != ts {
+				return errors.New("the commit changes a used approval")
+			}
+			continue
+		}
+		if appr == nil || id != appr.Request || ts != appr.Exp {
+			return errors.New("the commit adds to used without using that approval")
+		}
+	}
+	if appr == nil && next.Approval != nil && (old.Approval == nil || !bytes.Equal(next.Approval.Canonical(), old.Approval.Canonical())) {
+		if !admin {
+			return errors.New("a member who isn't an admin set an approval it didn't use")
+		}
+	}
+	return nil
+}
+
+// pickAdmin returns the member who becomes admin when none is left: the
+// smallest since, then the bytewise-smallest identifier (§11.8).
+func pickAdmin(since map[string]uint64, members map[string]bool) string {
+	best := ""
+	for id := range members {
+		if best == "" || since[id] < since[best] || since[id] == since[best] && id < best {
+			best = id
+		}
+	}
+	return best
+}
+
+func sameSet(a, b []string) bool {
+	x, y := uniq(a), uniq(b)
+	return slices.Equal(x, y)
+}
+
+func uniq(a []string) []string {
+	out := slices.Clone(a)
+	slices.Sort(out)
+	return slices.Compact(out)
 }
 
 // processProposal handles a standalone proposal. Chats use only one: a
-// device leaving, which the next committer includes (§11.1). Direct chats
-// in this version of Railcar don't commit them yet; the proposal stays
-// queued for the next commit.
+// device leaving, which proposes removing its own leaves, and which the
+// next committer includes by reference (§11.1, §11.7). This device
+// commits it at once, since OpenMLS sends nothing while it waits.
 func (e *Engine) processProposal(ctx context.Context, ch *Chat, b buffered) error {
 	g := e.dev.mls.Group(mustB64(ch.ID))
+	st, err := g.State()
+	if err != nil {
+		return err
+	}
 	p, err := g.Process(b.Data)
 	if err != nil {
 		e.dev.Revert()
@@ -499,12 +711,31 @@ func (e *Engine) processProposal(ctx context.Context, ch *Chat, b buffered) erro
 		e.dev.Revert()
 		return nil
 	}
-	if p.Proposal == nil || p.Proposal.Kind != "remove" || p.Proposal.Removed == nil || *p.Proposal.Removed != p.Sender.Index {
+	ok := p.Proposal != nil && p.Proposal.Kind == "remove" && p.Proposal.Removed != nil && p.Sender.Kind == "member"
+	if ok {
+		from, fok := st.Member(p.Sender.Index)
+		target, tok := st.Member(*p.Proposal.Removed)
+		fid, _, ferr := parseCredential(from.Identity)
+		tid, _, terr := parseCredential(target.Identity)
+		ok = fok && tok && ferr == nil && terr == nil && fid == tid
+	}
+	if !ok {
 		if p.Proposal != nil {
 			g.RemovePendingProposal(p.Proposal.Reference)
 		}
 		e.dev.Save()
 		return errors.New("chat: a standalone proposal other than a device leaving")
 	}
-	return e.dev.Save()
+	if err := e.dev.Save(); err != nil {
+		return err
+	}
+	if ch.Kind != KindGroup {
+		// Direct chats end only by removing the contact, which comes in
+		// a later version; the proposal stays queued.
+		return nil
+	}
+	if err := e.commitPending(ctx, ch); err != nil {
+		e.log.Info("chat: committing a leave", "err", err)
+	}
+	return nil
 }

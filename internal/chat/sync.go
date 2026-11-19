@@ -230,11 +230,7 @@ func (e *Engine) syncChat(ctx context.Context, ch *Chat) (bool, error) {
 		}
 		next.Basis[id], next.Heads[id] = b, b.Ref()
 	}
-	for id := range next.Since {
-		if !after[id] {
-			delete(next.Since, id)
-		}
-	}
+	settleExt(next, after)
 	if old.Kind == KindDirect && (!after[me] || len(after) > 2) {
 		return false, errors.New("chat: the change would leave the direct chat without its two people")
 	}
@@ -253,11 +249,17 @@ func (e *Engine) syncChat(ctx context.Context, ch *Chat) (bool, error) {
 		return false, err
 	}
 	ch.Hold = false
-	ch.Members = members(afterSt)
+	ch.Members, ch.Admins = members(afterSt), slices.Clone(next.Admins)
 	if err := e.save(); err != nil {
 		return false, err
 	}
 	e.deviceLines(ch, st, afterSt)
+	if ch.Kind == KindGroup && len(adds) > 0 && ch.Name != "" {
+		// New devices learn the group's name and topic from it (§12).
+		if err := e.sendMeta(ctx, ch); err != nil {
+			e.log.Info("chat: the group's metadata for new devices", "err", err)
+		}
+	}
 	e.emit(Event{Kind: EventChat, Chat: ptr(ch.public())})
 	return complete, nil
 }

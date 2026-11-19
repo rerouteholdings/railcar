@@ -45,6 +45,19 @@ type Chat struct {
 	Peer    string   `json:"peer,omitempty"` // a direct chat's other identity
 	Members []string `json:"members"`        // every member identity, this one included
 	Epoch   uint64   `json:"epoch"`
+	// Admins are a group chat's admins, from tieroute_group (§11.8).
+	Admins []string `json:"admins,omitempty"`
+	// Name and Topic are a group chat's, from the latest group-meta
+	// (§12). Picture is whether it has a picture.
+	Name    string `json:"name,omitempty"`
+	Topic   string `json:"topic,omitempty"`
+	Picture bool   `json:"picture,omitempty"`
+	// Requests are add-requests in a group chat that no admin has
+	// answered yet (§11.8).
+	Requests []AddPending `json:"requests,omitempty"`
+	// Left is set once this identity left the group chat, or was removed
+	// from it. Its history stays.
+	Left bool `json:"left,omitempty"`
 	// Applied is the hash of the commit applied in each recent epoch, to
 	// notice a hub that sends members different commits (§11.6).
 	Applied map[uint64]wire.Bytes `json:"applied,omitempty"`
@@ -67,6 +80,14 @@ type Chat struct {
 	// ReadReceipts is whether the user agreed to send read receipts in
 	// this chat (§13.3); nil means they haven't been asked.
 	ReadReceipts *bool `json:"read_receipts,omitempty"`
+}
+
+// AddPending is an add-request no admin has answered yet (§11.8).
+type AddPending struct {
+	ID   string `json:"id"`   // the add-request's msg-id
+	From string `json:"from"` // the member who asked
+	Who  string `json:"who"`  // the person they want to add
+	TS   int64  `json:"ts"`
 }
 
 // buffered is a delivery kept for a later epoch.

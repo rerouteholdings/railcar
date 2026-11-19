@@ -278,7 +278,7 @@ func (e *Engine) commit(ctx context.Context, ch *Chat, g *mls.Group, opts mls.Co
 		e.dev.Save()
 		return errors.New("chat: the hub accepted the commit without a receipt")
 	}
-	if err := e.checkReceipt(ctx, ch, *r.Receipt, g.ID(), epoch, res.Commit); err != nil {
+	if _, err := e.checkReceipt(ctx, ch, *r.Receipt, g.ID(), epoch, res.Commit); err != nil {
 		// The commit is sequenced, so the group has moved on; a bad
 		// receipt means the hub can't be trusted.
 		g.ClearPendingCommit()
@@ -316,22 +316,27 @@ func (ch *Chat) applied(epoch uint64, hash []byte) {
 
 // checkReceipt checks a hub's commit receipt (§11.6): signed by the hub
 // named in tieroute_group, for this group, epoch, and commit.
-func (e *Engine) checkReceipt(ctx context.Context, ch *Chat, r wire.Signed, group []byte, epoch uint64, commit []byte) error {
-	if r.T != TypeCommitReceipt {
-		return errors.New("chat: not a commit receipt")
-	}
+func (e *Engine) checkReceipt(ctx context.Context, ch *Chat, r wire.Signed, group []byte, epoch uint64, commit []byte) (CommitReceipt, error) {
+	return e.checkReceiptFrom(ctx, ch.Hub, r, group, epoch, commit)
+}
+
+// checkReceiptFrom checks a commit receipt from a named hub.
+func (e *Engine) checkReceiptFrom(ctx context.Context, hub string, r wire.Signed, group []byte, epoch uint64, commit []byte) (CommitReceipt, error) {
 	var b CommitReceipt
+	if r.T != TypeCommitReceipt {
+		return b, errors.New("chat: not a commit receipt")
+	}
 	if err := r.Body(&b); err != nil {
-		return err
+		return b, err
 	}
 	h := sha256.Sum256(commit)
-	if b.Hub != ch.Hub || !bytes.Equal(b.Group, group) || b.Epoch != epoch || !bytes.Equal(b.Hash, h[:]) {
-		return errors.New("chat: the receipt is for another hub, group, epoch, or commit")
+	if b.Hub != hub || !bytes.Equal(b.Group, group) || b.Epoch != epoch || !bytes.Equal(b.Hash, h[:]) {
+		return b, errors.New("chat: the receipt is for another hub, group, epoch, or commit")
 	}
-	if err := e.c.VerifyServerSigned(ctx, ch.Hub, r); err != nil {
-		return retryable{fmt.Errorf("chat: the receipt's signature: %w", err)}
+	if err := e.c.VerifyServerSigned(ctx, hub, r); err != nil {
+		return b, retryable{fmt.Errorf("chat: the receipt's signature: %w", err)}
 	}
-	return nil
+	return b, nil
 }
 
 // welcome joins a group from a Welcome, after checking it (§7.1, §10.3).
@@ -372,8 +377,10 @@ func (e *Engine) welcome(ctx context.Context, d *client.Delivery) error {
 	if err != nil {
 		return refuse(err)
 	}
-	if ext.Kind != KindDirect {
-		return refuse(errors.New("chat: group chats come in a later version of Railcar"))
+	if ext.Kind == KindGroup {
+		if c, ok := e.st.Chats[d.Group]; ok && c.Left {
+			return refuse(errors.New("chat: a Welcome to a group this identity left"))
+		}
 	}
 	// Check every leaf on this device's own fresh copies (§7.1, Welcomes):
 	// every leaf is a device its identity's chain added at some point, and
@@ -401,6 +408,14 @@ func (e *Engine) welcome(ctx context.Context, d *client.Delivery) error {
 		}
 		ids[id] = true
 	}
+	for id := range ids {
+		if _, ok := ext.Since[id]; !ok {
+			return refuse(fmt.Errorf("chat: tieroute_group's since leaves out %s", id))
+		}
+	}
+	if ext.Kind == KindGroup {
+		return e.joinGroup(ctx, g, d, st, ext, ids)
+	}
 	if !ids[me] || len(ids) != 2 {
 		return refuse(errors.New("chat: a direct chat that isn't this identity and one other"))
 	}
@@ -412,11 +427,6 @@ func (e *Engine) welcome(ctx context.Context, d *client.Delivery) error {
 	}
 	if d.From != me && d.From != peer {
 		return refuse(errors.New("chat: a direct chat Welcome from someone outside it"))
-	}
-	for id := range ids {
-		if _, ok := ext.Since[id]; !ok {
-			return refuse(fmt.Errorf("chat: tieroute_group's since leaves out %s", id))
-		}
 	}
 	if err := e.dev.Save(); err != nil {
 		return err
@@ -431,6 +441,65 @@ func (e *Engine) welcome(ctx context.Context, d *client.Delivery) error {
 	}
 	e.emit(Event{Kind: EventChat, Chat: ptr(ch.public())})
 	// The Welcome used up one of this device's key packages.
+	if err := e.topUp(ctx); err != nil {
+		e.log.Debug("chat: key packages", "err", err)
+	}
+	return nil
+}
+
+// joinGroup finishes joining a group chat from a checked Welcome: at most
+// 25 people and 250 leaves (§11.10), admins who are members, and since
+// covering exactly the members (§11.8). A Welcome whose tieroute_group
+// names a group it replaces starts a separate chat: linking it to the old
+// one waits for a later version of Railcar (§11.11). The caller holds
+// e.mu.
+func (e *Engine) joinGroup(ctx context.Context, g *mls.Group, d *client.Delivery, st *mls.State, ext *GroupExt, ids map[string]bool) error {
+	refuse := func(err error) error {
+		g.Delete()
+		e.dev.Revert()
+		return err
+	}
+	if len(ids) > MaxGroupPeople || len(st.Members) > MaxGroupLeaves {
+		return refuse(errors.New("chat: a group over 25 people or 250 leaves"))
+	}
+	if len(ext.Since) != len(ids) {
+		return refuse(errors.New("chat: tieroute_group's since lists someone who isn't a member"))
+	}
+	if len(ext.Admins) == 0 {
+		return refuse(errors.New("chat: a group chat without an admin"))
+	}
+	for _, a := range ext.Admins {
+		if !ids[a] {
+			return refuse(errors.New("chat: an admin who isn't a member"))
+		}
+	}
+	if err := e.dev.Save(); err != nil {
+		return err
+	}
+	if err := e.c.RegisterGroup(ctx, d.Group); err != nil {
+		e.log.Info("chat: registering the group", "err", err)
+	}
+	for id := range ids {
+		if e.st.Handles[id] == "" && id != e.c.ID() {
+			e.fetchChain(ctx, id, false)
+		}
+	}
+	ch := &Chat{ID: d.Group, Kind: KindGroup, Hub: ext.Hub, Members: members(st), Admins: slices.Clone(ext.Admins), Epoch: st.Epoch}
+	if old, ok := e.st.Chats[d.Group]; ok {
+		ch.Name, ch.Topic, ch.LastActivity, ch.Preview, ch.Unread = old.Name, old.Topic, old.LastActivity, old.Preview, old.Unread
+	}
+	ch.LastActivity = max(ch.LastActivity, e.c.Clock().Now().Unix())
+	e.st.Chats[ch.ID] = ch
+	e.st.Expected = slices.DeleteFunc(e.st.Expected, func(s string) bool { return s == ch.ID })
+	if err := e.save(); err != nil {
+		return err
+	}
+	if d.From == e.c.ID() {
+		e.systemLine(ch, "This device joined the group")
+	} else {
+		e.systemLine(ch, e.nameOf(d.From)+" added you")
+	}
+	e.emit(Event{Kind: EventChat, Chat: ptr(ch.public())})
 	if err := e.topUp(ctx); err != nil {
 		e.log.Debug("chat: key packages", "err", err)
 	}

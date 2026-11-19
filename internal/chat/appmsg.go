@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/rerouteholdings/railcar/internal/tieroute/identity"
 	"github.com/rerouteholdings/railcar/internal/tieroute/sig"
 	"github.com/rerouteholdings/railcar/internal/tieroute/wire"
 )
@@ -110,6 +111,42 @@ type Typing struct {
 	On *bool  `json:"on"`
 }
 
+// GroupMeta carries a group's whole state: its name, topic, and picture
+// (§12). An absent avatar keeps the current picture, and null removes it.
+type GroupMeta struct {
+	T      string         `json:"t"`
+	TS     int64          `json:"ts"`
+	Name   *string        `json:"name,omitempty"`
+	Topic  *string        `json:"topic,omitempty"`
+	Avatar jsontext.Value `json:"avatar,omitempty"`
+}
+
+// GroupPicture is a group's picture, carried inline (§12).
+type GroupPicture struct {
+	MIME string     `json:"mime"`
+	Data wire.Bytes `json:"data"`
+}
+
+// MaxGroupPicture is the largest group picture: 256 KiB (§12).
+const MaxGroupPicture = 262144
+
+// AddRequest asks the group's admins to add someone (§11.8).
+type AddRequest struct {
+	T   string `json:"t"`
+	ID  string `json:"id"`
+	TS  int64  `json:"ts"`
+	Who string `json:"who"`
+}
+
+// AddAnswer answers an add-request: with an approval, or declined
+// without one (§11.8).
+type AddAnswer struct {
+	T        string       `json:"t"`
+	TS       int64        `json:"ts"`
+	Target   string       `json:"target"`
+	Approval *wire.Signed `json:"approval,omitempty"`
+}
+
 // signAppMessage signs content as an app-message with the message key,
 // and returns JCS(signed), the MLS plaintext (§12).
 func signAppMessage(key ed25519.PrivateKey, id string, group []byte, ts int64, content any) ([]byte, error) {
@@ -210,6 +247,44 @@ func parseContent(t string, raw jsontext.Value) (any, error) {
 		}
 		if !validMsgID(c.Upto) {
 			return bad("needs upto")
+		}
+		return c, nil
+	case CGroupMeta:
+		var c GroupMeta
+		if err := wire.Unmarshal(raw, &c); err != nil {
+			return bad(err.Error())
+		}
+		if len(c.Avatar) > 0 && string(c.Avatar) != "null" {
+			var pic GroupPicture
+			if err := wire.Unmarshal(c.Avatar, &pic); err != nil {
+				return bad("a malformed avatar")
+			}
+			switch pic.MIME {
+			case "image/png", "image/jpeg", "image/webp", "image/gif":
+			default:
+				return bad("an avatar of another type")
+			}
+			if len(pic.Data) == 0 || len(pic.Data) > MaxGroupPicture {
+				return bad("an avatar over 256 KiB")
+			}
+		}
+		return c, nil
+	case CAddRequest:
+		var c AddRequest
+		if err := wire.Unmarshal(raw, &c); err != nil {
+			return bad(err.Error())
+		}
+		if !validMsgID(c.ID) || !identity.ValidIdentifier(c.Who) {
+			return bad("needs id and who")
+		}
+		return c, nil
+	case CAddAnswer:
+		var c AddAnswer
+		if err := wire.Unmarshal(raw, &c); err != nil {
+			return bad(err.Error())
+		}
+		if !validMsgID(c.Target) {
+			return bad("needs target")
 		}
 		return c, nil
 	case CTyping:

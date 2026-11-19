@@ -62,11 +62,11 @@ func (e *Engine) processApp(ctx context.Context, ch *Chat, b buffered) error {
 	if b.From != "" && b.From != id {
 		return errors.New("chat: an app-message delivered by someone else")
 	}
-	return e.applyContent(ch, id, am, t, b.Received)
+	return e.applyContent(ctx, ch, id, am, t, b.Received)
 }
 
 // applyContent applies one message's content to the chat's history.
-func (e *Engine) applyContent(ch *Chat, from string, am AppMessage, t string, received int64) error {
+func (e *Engine) applyContent(ctx context.Context, ch *Chat, from string, am AppMessage, t string, received int64) error {
 	c, err := parseContent(t, am.C)
 	if err != nil {
 		return err
@@ -111,6 +111,12 @@ func (e *Engine) applyContent(ch *Chat, from string, am AppMessage, t string, re
 	case Typing:
 		e.emit(Event{Kind: EventTyping, ChatID: ch.ID, Who: from, On: *c.On})
 		return nil
+	case GroupMeta:
+		return e.applyGroupMeta(ch, from, c)
+	case AddRequest:
+		return e.applyAddRequest(ctx, ch, from, c)
+	case AddAnswer:
+		return e.applyAddAnswer(ctx, ch, from, c)
 	}
 	// Known content this version doesn't act on, such as files and calls,
 	// shows as a placeholder when it's a message of its own.
@@ -365,6 +371,18 @@ func (e *Engine) sendable(chat string) (*Chat, error) {
 // e.mu.
 func (e *Engine) sendContent(ctx context.Context, ch *Chat, content any, ephemeral bool) error {
 	gid := mustB64(ch.ID)
+	if ch.Kind == KindGroup {
+		// OpenMLS sends nothing while a proposal waits: commit a
+		// member's leave first (§11.1).
+		if st, err := e.dev.mls.Group(gid).State(); err == nil && len(st.PendingProposals) > 0 {
+			if err := e.commitPending(ctx, ch); err != nil {
+				return err
+			}
+			if ch.Left {
+				return errors.New("chat: you're no longer in this group")
+			}
+		}
+	}
 	plain, err := signAppMessage(e.key, e.c.ID(), gid, e.c.Clock().Now().Unix(), content)
 	if err != nil {
 		return err

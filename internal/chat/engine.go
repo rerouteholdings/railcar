@@ -364,6 +364,8 @@ func (c *Chat) public() Chat {
 	p := *c
 	p.Members = slices.Clone(c.Members)
 	p.Applied = maps.Clone(c.Applied)
+	p.Admins = slices.Clone(c.Admins)
+	p.Requests = slices.Clone(c.Requests)
 	p.Buffered = nil
 	return p
 }
