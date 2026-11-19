@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"strconv"
 	"strings"
 	"time"
 
@@ -60,10 +61,19 @@ func renderMessages(t *theme, msgs []Message, width int, now time.Time, loc *tim
 // messageBody wraps a message's text and adds its markers: edited, sending,
 // or not sent.
 func messageBody(t *theme, m Message, width int) string {
+	switch {
+	case m.Deleted:
+		return "  " + t.dim.Render("Message deleted")
+	case m.Unsupported:
+		return "  " + t.dim.Render("Unsupported message. A newer app may show it.")
+	}
 	text := lipgloss.NewStyle().Width(width).Render(m.Text)
 	var marks []string
 	if m.Edited {
 		marks = append(marks, t.dim.Render("(edited)"))
+	}
+	if m.Read {
+		marks = append(marks, t.dim.Render("Read"))
 	}
 	switch m.Status {
 	case StatusSending:
@@ -87,6 +97,18 @@ func messageBody(t *theme, m Message, width int) string {
 	for i, l := range lines {
 		lines[i] = "  " + t.text.Render(l)
 	}
+	if len(m.Reactions) > 0 {
+		var rs []string
+		for _, r := range m.Reactions {
+			label := r.Emoji + " " + strconv.Itoa(r.Count)
+			if r.Mine {
+				rs = append(rs, t.accent.Render(label))
+			} else {
+				rs = append(rs, t.muted.Render(label))
+			}
+		}
+		lines = append(lines, "  "+strings.Join(rs, "  "))
+	}
 	return strings.Join(lines, "\n")
 }
 
@@ -100,7 +122,11 @@ func replyLine(t *theme, id string, byID map[string]Message, width int) string {
 	if orig.Mine {
 		who = "you"
 	}
-	quote := ansi.Truncate(previewOf(orig.Text), max(8, width-len(who)-16), "…")
+	text := orig.Text
+	if orig.Deleted {
+		text = "a deleted message"
+	}
+	quote := ansi.Truncate(previewOf(text), max(8, width-len(who)-16), "…")
 	return t.reply.Render("↳ Replying to " + who + ": " + quote)
 }
 

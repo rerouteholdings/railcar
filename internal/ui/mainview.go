@@ -5,11 +5,13 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 
 	"charm.land/bubbles/v2/help"
 	"charm.land/bubbles/v2/key"
 	"charm.land/bubbles/v2/list"
 	"charm.land/bubbles/v2/textarea"
+	"charm.land/bubbles/v2/textinput"
 	"charm.land/bubbles/v2/viewport"
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
@@ -33,6 +35,8 @@ const (
 	overlayHelp
 	overlayPalette
 	overlaySignOut
+	overlayAddContact
+	overlayInvite
 )
 
 // narrowWidth is the width under which the main view shows one pane at a
@@ -83,6 +87,28 @@ type mainView struct {
 	palette       *commandPalette
 	notice        string
 	layout        layout
+
+	// The add-contact box, and the invite code being shown.
+	addInput   textinput.Model
+	addErr     string
+	addBusy    bool
+	inviteCode string
+
+	// The composer's mode: answering a message, or changing one of the
+	// identity's own.
+	replyTo string
+	editing string
+
+	// Typing indicators: who's typing in each chat, and what this device
+	// last sent (§13.3).
+	typing     map[string]map[string]typist
+	typingChat string
+	typingSent time.Time
+	typingSeq  int
+
+	// follow is the handle of a contact request that was open when it left
+	// the list. Their direct chat opens when it arrives.
+	follow string
 }
 
 func newMainView(a *App) *mainView {
@@ -91,6 +117,7 @@ func newMainView(a *App) *mainView {
 		messages: map[string][]Message{},
 		loaded:   map[string]bool{},
 		drafts:   map[string]string{},
+		typing:   map[string]map[string]typist{},
 		help:     help.New(),
 	}
 	m.vp = viewport.New()
@@ -312,9 +339,10 @@ func (m *mainView) selectedID() string {
 func (m *mainView) openChat(a *App, id string, toComposer bool) tea.Cmd {
 	var cmds []tea.Cmd
 	if id != m.active {
-		if m.active != "" {
+		if m.active != "" && m.editing == "" {
 			m.drafts[m.active] = m.composer.Value()
 		}
+		m.replyTo, m.editing = "", ""
 		m.active = id
 		m.composer.SetValue(m.drafts[id])
 		if !m.loaded[id] {
@@ -323,7 +351,7 @@ func (m *mainView) openChat(a *App, id string, toComposer bool) tea.Cmd {
 	}
 	m.selectInList(id)
 	if c, ok := m.activeChat(); ok {
-		m.composer.Placeholder = "Message " + c.Title
+		m.updatePlaceholder()
 		if c.Unread > 0 {
 			for i := range m.chats {
 				if m.chats[i].ID == id {
@@ -332,6 +360,9 @@ func (m *mainView) openChat(a *App, id string, toComposer bool) tea.Cmd {
 			}
 			cmds = append(cmds, m.setChats(m.chats), m.markRead(a, id))
 		}
+	}
+	if c, ok := m.activeChat(); ok && c.IsRequest() {
+		toComposer = false
 	}
 	if toComposer {
 		m.narrowDetails = false
@@ -345,6 +376,9 @@ func (m *mainView) openChat(a *App, id string, toComposer bool) tea.Cmd {
 
 // setFocus moves the keyboard to a pane.
 func (m *mainView) setFocus(a *App, f focus) tea.Cmd {
+	if c, ok := m.activeChat(); ok && c.IsRequest() && f == focusComposer {
+		f = focusMessages
+	}
 	m.focus = f
 	m.resize(a)
 	if f == focusComposer && m.active != "" {
@@ -421,13 +455,24 @@ func (m *mainView) send(a *App) tea.Cmd {
 	chat := m.active
 	m.composer.Reset()
 	m.drafts[chat] = ""
-	return call(func(ctx context.Context) tea.Msg {
-		msg, err := a.b.Send(ctx, chat, Draft{Text: text})
+	typing := m.stopTyping(a)
+	if id := m.editing; id != "" {
+		m.editing = ""
+		m.updatePlaceholder()
+		return tea.Batch(typing, do("", "Railcar couldn't change the message: ", func(ctx context.Context) error {
+			return a.b.Edit(ctx, chat, id, text)
+		}))
+	}
+	reply := m.replyTo
+	m.replyTo = ""
+	m.updatePlaceholder()
+	return tea.Batch(typing, call(func(ctx context.Context) tea.Msg {
+		msg, err := a.b.Send(ctx, chat, Draft{Text: text, ReplyTo: reply})
 		if err != nil {
 			msg = Message{Chat: chat, Text: text}
 		}
 		return sentMsg{chat, msg, err}
-	})
+	}))
 }
 
 // upsert adds a message to a loaded chat, or replaces the one with its ID
@@ -469,11 +514,41 @@ func (m *mainView) handleEvent(a *App, e Event) tea.Cmd {
 			chats = append(chats, c)
 		}
 		cmds = append(cmds, m.setChats(chats))
+		if m.follow != "" && m.active == "" && c.Kind == DirectChat && len(c.Members) == 1 && c.Members[0].Handle == m.follow {
+			m.follow = ""
+			cmds = append(cmds, m.openChat(a, c.ID, m.focus != focusChats))
+		}
 		if c.ID == m.active {
-			m.composer.Placeholder = "Message " + c.Title
+			m.updatePlaceholder()
+			if c.IsRequest() && m.focus == focusComposer {
+				cmds = append(cmds, m.setFocus(a, focusMessages))
+			}
 		}
 		return tea.Batch(cmds...)
+	case ChatRemoved:
+		chats := make([]Chat, 0, len(m.chats))
+		for _, c := range m.chats {
+			if c.ID != e.Chat {
+				chats = append(chats, c)
+			}
+		}
+		if m.active == e.Chat {
+			if c, ok := m.activeChat(); ok && c.IsRequest() && len(c.Members) == 1 {
+				m.follow = c.Members[0].Handle
+			}
+			m.active = ""
+			m.composer.Blur()
+			m.focus = focusChats
+			m.resize(a)
+		}
+		return m.setChats(chats)
+	case Typing:
+		cmd := m.setTyping(a, e)
+		return cmd
 	case MessageAdded:
+		if t := m.typing[e.Message.Chat]; t != nil {
+			delete(t, e.Message.Sender.Handle)
+		}
 		m.upsert(e.Message, false)
 		if e.Message.Chat == m.active {
 			m.refresh(a, e.Message.Mine)
@@ -529,6 +604,40 @@ func (m *mainView) update(a *App, msg tea.Msg) tea.Cmd {
 	case noticeMsg:
 		m.notice = msg.text
 		return nil
+	case actionMsg:
+		if msg.err != nil {
+			m.notice = msg.bad + msg.err.Error()
+		} else {
+			m.notice = msg.ok
+		}
+		return nil
+	case inviteMsg:
+		if msg.err != nil {
+			m.notice = "Railcar couldn't make an invite code: " + msg.err.Error()
+			return nil
+		}
+		m.notice = ""
+		m.inviteCode = msg.code
+		m.overlay = overlayInvite
+		return tea.SetClipboard(msg.code)
+	case addedMsg:
+		m.addBusy = false
+		if msg.err != nil {
+			m.addErr = "Railcar couldn't send the request: " + msg.err.Error()
+			return nil
+		}
+		if m.overlay == overlayAddContact {
+			m.overlay = overlayNone
+		}
+		m.notice = "Request sent. Your chat starts when they accept."
+		return nil
+	case typingOffMsg:
+		if msg.seq == m.typingSeq && msg.chat == m.typingChat {
+			return m.stopTyping(a)
+		}
+		return nil
+	case typingExpiredMsg:
+		return nil
 	case tea.MouseClickMsg:
 		return m.click(a, msg.Mouse())
 	case tea.MouseWheelMsg:
@@ -573,6 +682,13 @@ func (m *mainView) key(a *App, msg tea.KeyPressMsg) tea.Cmd {
 			m.overlay = overlayNone
 		}
 		return cmd
+	case overlayAddContact:
+		return m.addContactKey(a, msg)
+	case overlayInvite:
+		if key.Matches(msg, k.Back) || msg.String() == "enter" || msg.String() == "q" {
+			m.overlay = overlayNone
+		}
+		return nil
 	case overlaySignOut:
 		switch msg.String() {
 		case "enter", "y":
@@ -611,6 +727,8 @@ func (m *mainView) key(a *App, msg tea.KeyPressMsg) tea.Cmd {
 		return m.moveChat(a, 1)
 	case key.Matches(msg, k.PrevChat):
 		return m.moveChat(a, -1)
+	case key.Matches(msg, k.AddContact):
+		return m.openAddContact(a, "")
 	}
 
 	if m.focus == focusComposer {
@@ -618,11 +736,27 @@ func (m *mainView) key(a *App, msg tea.KeyPressMsg) tea.Cmd {
 		case key.Matches(msg, k.Send):
 			return m.send(a)
 		case key.Matches(msg, k.Back):
+			if m.cancelMode() {
+				return nil
+			}
 			return m.setFocus(a, focusMessages)
 		}
+		before := m.composer.Value()
 		var cmd tea.Cmd
 		m.composer, cmd = m.composer.Update(msg)
+		if m.composer.Value() != before && m.editing == "" {
+			return tea.Batch(cmd, m.typed(a))
+		}
 		return cmd
+	}
+
+	if c, ok := m.activeChat(); ok && c.Kind == ContactRequest && (m.focus == focusMessages || m.focus == focusChats && c.ID == m.selectedID()) {
+		switch {
+		case key.Matches(msg, k.Accept):
+			return m.acceptRequest(a)
+		case key.Matches(msg, k.Decline):
+			return m.declineRequest(a)
+		}
 	}
 
 	switch {
@@ -662,6 +796,10 @@ func (m *mainView) key(a *App, msg tea.KeyPressMsg) tea.Cmd {
 
 	// The message view.
 	switch {
+	case key.Matches(msg, k.Reply):
+		return m.startReply(a)
+	case key.Matches(msg, k.EditLast):
+		return m.startEdit(a)
 	case key.Matches(msg, k.Back):
 		if m.narrowDetails {
 			m.narrowDetails = false
@@ -801,6 +939,10 @@ func (m *mainView) view(a *App) string {
 		return overlayOn(screen, t.overlay.Render(fit(content, w, lipgloss.Height(content))), a.width, a.height)
 	case overlaySignOut:
 		return overlayOn(screen, m.signOutView(a), a.width, a.height)
+	case overlayAddContact:
+		return overlayOn(screen, m.addContactView(a), a.width, a.height)
+	case overlayInvite:
+		return overlayOn(screen, m.inviteView(a), a.width, a.height)
 	}
 	return screen
 }
@@ -825,7 +967,10 @@ func (m *mainView) convView(a *App) string {
 	if !ok {
 		msg := "Select a chat to read it."
 		if len(m.chats) == 0 {
-			msg = "No chats yet."
+			msg = "No chats yet.\n\nTo add a contact, press Ctrl+N and paste their code.\nTo make a code to give someone, type :invite."
+			if a.opts.Demo {
+				msg = "No chats yet."
+			}
 		}
 		return lipgloss.Place(w, l.conv.h-2, lipgloss.Center, lipgloss.Center, t.dim.Render(msg))
 	}
@@ -841,8 +986,23 @@ func (m *mainView) convView(a *App) string {
 		hint, gap = "", 0
 	}
 	header := " " + title.Render(name) + strings.Repeat(" ", gap) + hint + " "
-	sub := " " + t.muted.Render(ansi.Truncate(chatSubtitle(c), max(1, w-2), "…"))
+	subText := chatSubtitle(c)
+	switch c.Kind {
+	case ContactRequest:
+		subText = "Contact request"
+	case SentRequest:
+		subText = "Your contact request"
+	}
+	if typing := m.typingLine(a, c.ID); typing != "" {
+		subText = typing
+	} else if c.Stopped != "" {
+		subText = c.Stopped
+	}
+	sub := " " + t.muted.Render(ansi.Truncate(subText, max(1, w-2), "…"))
 	rule := t.dim.Foreground(t.p.line).Render(strings.Repeat("─", w))
+	if c.IsRequest() {
+		return strings.Join([]string{header, sub, rule, m.requestView(a, c, w, l.conv.h-5)}, "\n")
+	}
 
 	return strings.Join([]string{
 		header,

@@ -6,17 +6,22 @@ import "charm.land/bubbles/v2/key"
 // them grouped as in FullHelp.
 type keyMap struct {
 	// Anywhere.
-	Quit      key.Binding
-	Help      key.Binding
-	Palette   key.Binding
-	Details   key.Binding
-	NextPane  key.Binding
-	PrevPane  key.Binding
-	NextChat  key.Binding
-	PrevChat  key.Binding
-	Back      key.Binding
-	Command   key.Binding
-	ChatsFind key.Binding
+	Quit       key.Binding
+	Help       key.Binding
+	Palette    key.Binding
+	Details    key.Binding
+	NextPane   key.Binding
+	PrevPane   key.Binding
+	NextChat   key.Binding
+	PrevChat   key.Binding
+	Back       key.Binding
+	Command    key.Binding
+	ChatsFind  key.Binding
+	AddContact key.Binding
+
+	// A contact request.
+	Accept  key.Binding
+	Decline key.Binding
 
 	// The chat list.
 	Up   key.Binding
@@ -28,6 +33,8 @@ type keyMap struct {
 	PageDown key.Binding
 	Top      key.Binding
 	Bottom   key.Binding
+	Reply    key.Binding
+	EditLast key.Binding
 
 	// The composer.
 	Send    key.Binding
@@ -39,17 +46,21 @@ func newKeyMap() keyMap {
 		return key.NewBinding(key.WithKeys(keys...), key.WithHelp(k, desc))
 	}
 	return keyMap{
-		Quit:      b([]string{"ctrl+c"}, "ctrl+c", "quit"),
-		Help:      b([]string{"?", "f1"}, "?", "help"),
-		Palette:   b([]string{"ctrl+p"}, "ctrl+p", "commands"),
-		Command:   b([]string{":"}, ":", "commands"),
-		Details:   b([]string{"ctrl+o"}, "ctrl+o", "details"),
-		NextPane:  b([]string{"tab"}, "tab", "next pane"),
-		PrevPane:  b([]string{"shift+tab"}, "shift+tab", "previous pane"),
-		NextChat:  b([]string{"alt+down", "ctrl+down"}, "alt+↓", "next chat"),
-		PrevChat:  b([]string{"alt+up", "ctrl+up"}, "alt+↑", "previous chat"),
-		Back:      b([]string{"esc"}, "esc", "back"),
-		ChatsFind: b([]string{"/"}, "/", "find a chat"),
+		Quit:       b([]string{"ctrl+c"}, "ctrl+c", "quit"),
+		Help:       b([]string{"?", "f1"}, "?", "help"),
+		Palette:    b([]string{"ctrl+p"}, "ctrl+p", "commands"),
+		Command:    b([]string{":"}, ":", "commands"),
+		Details:    b([]string{"ctrl+o"}, "ctrl+o", "details"),
+		NextPane:   b([]string{"tab"}, "tab", "next pane"),
+		PrevPane:   b([]string{"shift+tab"}, "shift+tab", "previous pane"),
+		NextChat:   b([]string{"alt+down", "ctrl+down"}, "alt+↓", "next chat"),
+		PrevChat:   b([]string{"alt+up", "ctrl+up"}, "alt+↑", "previous chat"),
+		Back:       b([]string{"esc"}, "esc", "back"),
+		ChatsFind:  b([]string{"/"}, "/", "find a chat"),
+		AddContact: b([]string{"ctrl+n"}, "ctrl+n", "add a contact"),
+
+		Accept:  b([]string{"a"}, "a", "accept request"),
+		Decline: b([]string{"d"}, "d", "decline request"),
 
 		Up:   b([]string{"up", "k"}, "↑/k", "up"),
 		Down: b([]string{"down", "j"}, "↓/j", "down"),
@@ -59,6 +70,8 @@ func newKeyMap() keyMap {
 		PageDown: b([]string{"pgdown", "f", "space"}, "pgdn", "page down"),
 		Top:      b([]string{"home", "g"}, "home", "oldest"),
 		Bottom:   b([]string{"end", "G"}, "end", "latest"),
+		Reply:    b([]string{"r"}, "r", "reply to the last message"),
+		EditLast: b([]string{"e"}, "e", "edit your last message"),
 
 		Send:    b([]string{"enter"}, "enter", "send"),
 		Newline: b([]string{"shift+enter", "alt+enter", "ctrl+j"}, "shift+enter", "new line"),
@@ -81,8 +94,8 @@ func (k keyMap) shortHelp(f focus) []key.Binding {
 func (k keyMap) fullHelp() [][]key.Binding {
 	return [][]key.Binding{
 		{k.NextPane, k.PrevPane, k.NextChat, k.PrevChat, k.Back},
-		{k.Up, k.Down, k.Open, k.ChatsFind},
-		{k.PageUp, k.PageDown, k.Top, k.Bottom},
+		{k.Up, k.Down, k.Open, k.ChatsFind, k.AddContact, k.Accept, k.Decline},
+		{k.PageUp, k.PageDown, k.Top, k.Bottom, k.Reply, k.EditLast},
 		{k.Send, k.Newline, k.Details, k.Palette, k.Command, k.Help, k.Quit},
 	}
 }

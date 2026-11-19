@@ -14,6 +14,9 @@ type command struct {
 	// names are what you can type after : to run the command directly.
 	names []string
 	run   func(a *App) tea.Cmd
+	// withArg, when set, runs the command typed by name with the rest of
+	// the line, such as :react 🎉.
+	withArg func(a *App, arg string) tea.Cmd
 }
 
 // commandPalette lists commands and filters them as you type. Opened with
@@ -43,11 +46,25 @@ func newCommandPalette(a *App, m *mainView) *commandPalette {
 		details = "Hide details"
 	}
 	cmds := []command{
+		{label: "Add a contact", names: []string{"add"}, run: func(a *App) tea.Cmd { return a.main.openAddContact(a, "") },
+			withArg: func(a *App, code string) tea.Cmd { return a.main.openAddContact(a, code) }},
+		{label: "Make an invite code", names: []string{"invite"}, run: func(a *App) tea.Cmd { return a.main.makeInvite(a) }},
 		{label: "Find a chat", names: []string{"find"}, run: func(a *App) tea.Cmd { return a.main.findChat(a) }},
 		{label: details, names: []string{"details", "info"}, run: func(a *App) tea.Cmd { a.main.toggleDetails(a); return nil }},
+		{label: "Reply to the last message", names: []string{"reply"}, run: func(a *App) tea.Cmd { return a.main.startReply(a) }},
+		{label: "Edit your last message", names: []string{"edit"}, run: func(a *App) tea.Cmd { return a.main.startEdit(a) }},
+		{label: "Delete your last message", names: []string{"delete"}, run: func(a *App) tea.Cmd { return a.main.deleteLast(a) }},
+		{label: "React to the last message", names: []string{"react"}, run: func(a *App) tea.Cmd { return a.main.reactLast(a, "") },
+			withArg: func(a *App, emoji string) tea.Cmd { return a.main.reactLast(a, emoji) }},
 		{label: "Show keys and help", names: []string{"help", "h"}, run: func(a *App) tea.Cmd { a.main.overlay = overlayHelp; return nil }},
 		{label: "Sign out", names: []string{"sign-out", "signout"}, run: func(a *App) tea.Cmd { a.main.overlay = overlaySignOut; return nil }},
 		{label: "Quit Railcar", names: []string{"quit", "q"}, run: func(*App) tea.Cmd { return tea.Quit }},
+	}
+	if c, ok := m.activeChat(); ok && c.Kind == ContactRequest {
+		cmds = append([]command{
+			{label: "Accept " + c.Title + "'s request", names: []string{"accept"}, run: func(a *App) tea.Cmd { return a.main.acceptRequest(a) }},
+			{label: "Decline " + c.Title + "'s request", names: []string{"decline"}, run: func(a *App) tea.Cmd { return a.main.declineRequest(a) }},
+		}, cmds...)
 	}
 	for _, c := range m.chats {
 		id := c.ID
@@ -103,10 +120,18 @@ func (p *commandPalette) update(a *App, msg tea.KeyPressMsg) (cmd tea.Cmd, done 
 		p.cursor = min(max(0, len(p.shown)-1), p.cursor+1)
 		return nil, false
 	case "enter":
-		typed := strings.ToLower(strings.TrimSpace(p.input.Value()))
+		line := strings.TrimSpace(p.input.Value())
+		typed := strings.ToLower(line)
 		for _, c := range p.commands {
 			if hasName(c, typed) {
 				return c.run(a), true
+			}
+		}
+		if name, arg, ok := strings.Cut(line, " "); ok {
+			for _, c := range p.commands {
+				if c.withArg != nil && hasName(c, strings.ToLower(name)) {
+					return c.withArg(a, strings.TrimSpace(arg)), true
+				}
 			}
 		}
 		if len(p.shown) == 0 {

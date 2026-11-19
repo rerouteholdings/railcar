@@ -60,6 +60,37 @@ type Backend interface {
 	// count.
 	MarkRead(ctx context.Context, chat string) error
 
+	// Edit replaces the text of one of the identity's own messages (§12).
+	Edit(ctx context.Context, chat, message, text string) error
+
+	// Delete deletes one of the identity's own messages for everyone (§12).
+	Delete(ctx context.Context, chat, message string) error
+
+	// React adds a reaction to a message, or takes it back when the
+	// identity already reacted with that emoji (§12).
+	React(ctx context.Context, chat, message, emoji string) error
+
+	// SetTyping tells the chat's other members whether the user is typing
+	// (§13.3).
+	SetTyping(ctx context.Context, chat string, on bool) error
+
+	// MakeInvite makes an invite code others can send a contact request
+	// with, and returns it as it's shared: @handle::code (§9.1, §9.4).
+	MakeInvite(ctx context.Context) (string, error)
+
+	// AddContact sends a contact request with someone's code, @handle::code
+	// or its link (§9.2, §9.4). The request shows in the chat list as a
+	// SentRequest until they accept.
+	AddContact(ctx context.Context, code string) error
+
+	// AcceptRequest accepts the contact request shown as a ContactRequest
+	// chat, which starts a direct chat with them (§9.3).
+	AcceptRequest(ctx context.Context, chat string) error
+
+	// DeclineRequest declines the contact request shown as a
+	// ContactRequest chat. The requester is told (§9.3).
+	DeclineRequest(ctx context.Context, chat string) error
+
 	// SignOut removes this device's identity from the profile. Afterwards,
 	// Open returns ErrNoIdentity.
 	SignOut(ctx context.Context) error
@@ -70,6 +101,12 @@ type Backend interface {
 
 // ErrNoIdentity is what Open returns for a profile without an identity.
 var ErrNoIdentity = errors.New("this profile doesn't have an identity yet")
+
+// ErrSignUpRefused marks a FinishSignUp error for a handle or registration
+// code the homeserver refused. The interface goes back to the form to fix
+// them. A backend may return the same recovery words from the next
+// SignUp, and the interface then doesn't ask for them back again.
+var ErrSignUpRefused = errors.New("the homeserver refused the handle or registration code")
 
 // Identity is the signed-in identity, as the interface shows it.
 type Identity struct {
@@ -119,10 +156,15 @@ func (s StreamState) String() string {
 // ChatKind tells direct chats from group chats.
 type ChatKind int
 
-// The kinds of chat.
+// The kinds of chat. Contact requests show in the chat list too, until
+// they're accepted or declined.
 const (
 	DirectChat ChatKind = iota
 	GroupChat
+	// ContactRequest is someone asking to be a contact (§9.2).
+	ContactRequest
+	// SentRequest is the identity's own request, waiting for an answer.
+	SentRequest
 )
 
 // Member is one person in a chat.
@@ -142,7 +184,14 @@ type Chat struct {
 	// Preview is a short plain-text line from the latest message.
 	Preview      string
 	LastActivity time.Time
+	// Stopped says why nothing can be sent in the chat anymore, such as a
+	// change from another member that broke the rules (§7.1). It's empty
+	// for a chat that works.
+	Stopped string
 }
+
+// IsRequest reports whether the entry is a contact request, not a chat.
+func (c Chat) IsRequest() bool { return c.Kind == ContactRequest || c.Kind == SentRequest }
 
 // MessageStatus tracks a message the signed-in identity sent.
 type MessageStatus int
@@ -168,7 +217,24 @@ type Message struct {
 	ReplyTo string
 	// Edited is true when the sender has changed the text since sending.
 	Edited bool
+	// Deleted is true when the sender deleted the message for everyone.
+	Deleted bool
+	// Unsupported is true for content this version of Railcar can't show
+	// (§12).
+	Unsupported bool
+	Reactions   []Reaction
+	// Read is true for the identity's own message once the other side sent
+	// a read receipt for it (§13.3).
+	Read   bool
 	Status MessageStatus
+}
+
+// Reaction is one emoji on a message, and how many people reacted with it.
+type Reaction struct {
+	Emoji string
+	Count int
+	// Mine is true when the signed-in identity is one of them.
+	Mine bool
 }
 
 // Draft is a message the user is about to send.
@@ -179,7 +245,8 @@ type Draft struct {
 }
 
 // Event is something that happened in the backend. It's one of
-// StreamChanged, ChatChanged, MessageAdded, MessageChanged, or SignedOut.
+// StreamChanged, ChatChanged, ChatRemoved, MessageAdded, MessageChanged,
+// Typing, or SignedOut.
 type Event interface{ event() }
 
 // StreamChanged reports a new stream state. Err is why the stream is offline
@@ -193,6 +260,11 @@ type StreamChanged struct {
 // unread count, or preview.
 type ChatChanged struct{ Chat Chat }
 
+// ChatRemoved reports that an entry left the chat list, such as a
+// declined request, or a direct chat replaced by a new one with the same
+// person (§11.11).
+type ChatRemoved struct{ Chat string }
+
 // MessageAdded reports a new message in a chat, from anyone.
 type MessageAdded struct{ Message Message }
 
@@ -200,12 +272,22 @@ type MessageAdded struct{ Message Message }
 // interface already has.
 type MessageChanged struct{ Message Message }
 
+// Typing reports that someone in a chat started or stopped typing
+// (§13.3).
+type Typing struct {
+	Chat string
+	Who  Member
+	On   bool
+}
+
 // SignedOut reports that the identity is no longer signed in on this device,
 // such as when another device removes it (§7.6).
 type SignedOut struct{ Reason string }
 
 func (StreamChanged) event()  {}
 func (ChatChanged) event()    {}
+func (ChatRemoved) event()    {}
 func (MessageAdded) event()   {}
 func (MessageChanged) event() {}
 func (SignedOut) event()      {}
+func (Typing) event()         {}
