@@ -22,8 +22,19 @@ func (e *Engine) linkBundle(ctx context.Context, d *client.Delivery) error {
 		e.log.Debug("chat: a link bundle for another device", "err", err)
 		return nil
 	}
+	e.log.Debug("chat: the link bundle", "contacts", len(b.Contacts), "groups", len(b.Groups), "history", len(b.History), "communities", len(b.Communities))
 	e.st.Expected = slices.Clone(b.Groups)
-	return e.importContacts(ctx, b.Contacts)
+	if err := e.importContacts(ctx, b.Contacts); err != nil {
+		return err
+	}
+	if len(b.History) > 0 {
+		// Earlier messages, kept until this device joins their chats
+		// (§7.2, §7.3). Without them, the chats start empty.
+		if err := e.importHistory(ctx, b.History); err != nil {
+			e.log.Info("chat: the link bundle's history", "err", err)
+		}
+	}
+	return nil
 }
 
 // ImportContacts takes the contact list from the homeserver
@@ -111,6 +122,14 @@ func (e *Engine) AddDevice(ctx context.Context, d client.NewDevice, name string)
 		if c := e.st.Chats[id]; c.Stopped == "" && c.Kind != KindChannel && !c.Left {
 			b.Groups = append(b.Groups, id)
 		}
+	}
+	// History goes as files the new device downloads (§7.2, §7.3). Without
+	// it, the new device starts with empty chats, so a failure here
+	// doesn't stop the linking.
+	if h, err := e.uploadLinkHistory(ctx); err != nil {
+		e.log.Info("chat: the history for the new device", "err", err)
+	} else {
+		b.History = h
 	}
 	if err := e.c.AddLinkedDevice(ctx, d, name, b); err != nil {
 		return err

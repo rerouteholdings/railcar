@@ -62,7 +62,13 @@ func (e *Engine) processApp(ctx context.Context, ch *Chat, b buffered) error {
 	if b.From != "" && b.From != id {
 		return errors.New("chat: an app-message delivered by someone else")
 	}
-	return e.applyContent(ctx, ch, id, am, t, b.Received)
+	if err := e.applyContent(ctx, ch, id, am, t, b.Received); err != nil {
+		return err
+	}
+	if mk, ok := leaf.Extension(ExtMsgKey); ok {
+		e.keepHistory(ch, p.Plaintext, mk)
+	}
+	return nil
 }
 
 // applyContent applies one message's content to the chat's history.
@@ -436,6 +442,9 @@ func (e *Engine) sendContent(ctx context.Context, ch *Chat, content any, ephemer
 	}
 	if res[0].Status != "sent" {
 		return &wire.Error{Code: res[0].Error, Msg: "the homeserver refused the message"}
+	}
+	if !ephemeral {
+		e.keepHistory(ch, plain, e.dev.info.MsgKeyExtension)
 	}
 	return nil
 }

@@ -191,6 +191,7 @@ func (e *Engine) adoptDirect(ch *Chat) {
 				}
 				ch.LastActivity, ch.Preview, ch.Unread = old.LastActivity, old.Preview, old.Unread
 			}
+			e.moveHistory(oldID, ch.ID)
 			delete(e.st.Chats, oldID)
 			e.dev.mls.Group(mustB64(oldID)).Delete()
 			e.dev.Save()
@@ -439,6 +440,7 @@ func (e *Engine) welcome(ctx context.Context, d *client.Delivery) error {
 	if err := e.save(); err != nil {
 		return err
 	}
+	e.applyImported(ctx, ch)
 	e.emit(Event{Kind: EventChat, Chat: ptr(ch.public())})
 	// The Welcome used up one of this device's key packages.
 	if err := e.topUp(ctx); err != nil {
@@ -499,6 +501,7 @@ func (e *Engine) joinGroup(ctx context.Context, g *mls.Group, d *client.Delivery
 	} else {
 		e.systemLine(ch, e.nameOf(d.From)+" added you")
 	}
+	e.applyImported(ctx, ch)
 	e.emit(Event{Kind: EventChat, Chat: ptr(ch.public())})
 	if err := e.topUp(ctx); err != nil {
 		e.log.Debug("chat: key packages", "err", err)

@@ -3,6 +3,8 @@ package chat
 import (
 	"context"
 	"errors"
+	"log/slog"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -38,7 +40,11 @@ func finishLink(t *testing.T, l *client.Link) *railcar {
 	if c == nil {
 		t.Fatal("the existing device didn't add this one")
 	}
-	e, err := New(c, Options{})
+	opts := Options{}
+	if os.Getenv("RAILCAR_E2E_LOGS") != "" {
+		opts.Logger = slog.New(slog.NewTextHandler(testWriter{t, "linked"}, &slog.HandlerOptions{Level: slog.LevelDebug}))
+	}
+	e, err := New(c, opts)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -136,6 +142,7 @@ func TestE2EInteropLinkFromReroute(t *testing.T) {
 	lee.run("send", "ravi.a.test", "hello Ravi, before your new device")
 	settle()
 	ravi.run("sync")
+	ravi.run("send", "lee.b.test", "hello Lee, before my new device")
 
 	// The link code, approved in Reroute with the confirmation code.
 	l, err := client.StartLink(ctx, "a.test", "@ravi.a.test", opts)
@@ -158,6 +165,8 @@ func TestE2EInteropLinkFromReroute(t *testing.T) {
 	if ch.Kind != KindDirect || len(ch.Members) != 2 {
 		t.Fatalf("the chat: %+v", ch)
 	}
+	// The link bundle's history shows what came before (§7.2, §7.3).
+	rc.find(ch.ID, "hello Lee, before my new device")
 	if _, err := rc.e.SendText(ctx, ch.ID, "hello Lee, from Ravi's Railcar", ""); err != nil {
 		t.Fatal(err)
 	}
@@ -187,6 +196,7 @@ func TestE2EInteropLinkFromReroute(t *testing.T) {
 	if ch2.ID != ch.ID {
 		t.Errorf("the second Railcar is in another chat")
 	}
+	rc2.find(ch.ID, "hello Lee, before my new device")
 	lee.run("send", "ravi.a.test", "hello to Ravi's three devices")
 	settle()
 	rc.sync()
@@ -221,6 +231,13 @@ func TestE2EInteropLinkToReroute(t *testing.T) {
 	lee.run("sync")
 	lee.run("accept", "kat.a.test")
 	ch := kat.waitChat("lee.b.test")
+	if _, err := kat.e.SendText(ctx, ch.ID, "hello Lee, before Kat's desk", ""); err != nil {
+		t.Fatal(err)
+	}
+	lee.run("send", "kat.a.test", "hello Kat, before your desk")
+	settle()
+	kat.sync()
+	kat.find(ch.ID, "hello Kat, before your desk")
 
 	// Kat's new Reroute device shows a link code; Railcar approves it.
 	desk := newRerouteCLI(t, "kat-desk")
@@ -247,6 +264,10 @@ func TestE2EInteropLinkToReroute(t *testing.T) {
 	kat.syncDevices(func() { desk.run("sync") })
 	if !kat.hasLine(ch.ID, "A new device was added to your account") {
 		t.Error("no line for the new device")
+	}
+	// Reroute imports the history Railcar sent in the link bundle.
+	if h := desk.run("history", "lee.b.test"); !strings.Contains(h, "hello Lee, before Kat's desk") || !strings.Contains(h, "hello Kat, before your desk") {
+		t.Error("Kat's Reroute device doesn't show the history from before it")
 	}
 	if _, err := kat.e.SendText(ctx, ch.ID, "hello Lee, to both of Kat's devices", ""); err != nil {
 		t.Fatal(err)
@@ -339,6 +360,23 @@ func TestE2ERailcarLink(t *testing.T) {
 		t.Fatal(err)
 	}
 	ch := kat.waitChat("ravi.b.test")
+	early, err := kat.e.SendText(ctx, ch.ID, "before the second device", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := kat.e.Edit(ctx, ch.ID, early.ID, "before the second device, edited"); err != nil {
+		t.Fatal(err)
+	}
+	settle()
+	ravi.sync()
+	if _, err := ravi.e.SendText(ctx, ravi.chatWith("kat.a.test").ID, "hello Kat, before your second device", ""); err != nil {
+		t.Fatal(err)
+	}
+	if err := ravi.e.React(ctx, ravi.chatWith("kat.a.test").ID, early.ID, "🚃", false); err != nil {
+		t.Fatal(err)
+	}
+	settle()
+	kat.sync()
 
 	// A link code and a typed confirmation code.
 	l, err := client.StartLink(ctx, "a.test", "kat.a.test", opts)
@@ -371,6 +409,15 @@ func TestE2ERailcarLink(t *testing.T) {
 	ch2 := kat2.waitChat("ravi.b.test")
 	if ch2.ID != ch.ID {
 		t.Fatal("the new device is in another chat")
+	}
+	// The history from the link bundle, with the edit and the reaction
+	// applied, and nothing unread (§7.3).
+	if m := kat2.find(ch.ID, "before the second device, edited"); !m.Edited || len(m.Reactions["🚃"]) != 1 {
+		t.Errorf("the imported message: %+v", m)
+	}
+	kat2.find(ch.ID, "hello Kat, before your second device")
+	if c, _ := kat2.e.Chat(ch.ID); c.Unread != 0 {
+		t.Errorf("imported history counts as unread: %d", c.Unread)
 	}
 	if _, err := kat2.e.SendText(ctx, ch.ID, "hello Ravi, from Kat's second device", ""); err != nil {
 		t.Fatal(err)

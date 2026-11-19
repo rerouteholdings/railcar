@@ -11,6 +11,7 @@ The package sits between `internal/tieroute/client`, which talks to the homeserv
 - Joining from a Welcome: the Welcome has to come from a contact, and every leaf is checked on this device's own fresh chain copies (§7.1).
 - Commits from the other side, such as a bare Update after a new message key, or the Add of a newly linked device: each is checked against the hub's receipt (§11.6), judged, and applied, or refused.
 - Linking devices (§7.2): a linked device opens its link bundle and takes the contact list from it and from the homeserver, so the Welcomes that follow find their senders. The approving device sends the bundle, with the contacts and the chats, and adds the new device to every chat.
+- History for a linked device (§7.2, §7.3): every direct chat and group chat keeps the signed app-messages it applied, texts, files, edits, deletes, and reactions, with the msg-key that signed each. The approving device exports them as JSON Lines, uploads the export as files of at most 64 MiB, and lists them in the bundle's `history`. The linked device downloads them, verifies each message against its msg-key, the msg-key against a device in the sender's chain, and its group against the chat, and keeps the ones that pass until it joins their chats. Then it applies them, oldest first, without counting them as unread. It skips a version 1 part, and community channels' items, whose history comes from segments (§16.5).
 - The sync rule (§11.9): when a member's chain gains or loses a device, Railcar commits the Removes and Adds in each chat it shares with them, its own identity included. The commit binds every member's current history. A device without key packages yet is tried again every few seconds for 10 minutes, and a `stale-epoch` answer means someone else committed first, so Railcar applies theirs and checks again. Until a Remove lands, Railcar sends nothing else to the chat.
 - System lines: a line in the chat when someone's devices change, such as "@kat has a new device" (§11.9).
 - Messages (§12): text, replies, edits, deletes, reactions, typing indicators, and read receipts. Unknown content shows as an "unsupported message" placeholder, and malformed known content is dropped.
@@ -32,6 +33,7 @@ The package sits between `internal/tieroute/client`, which talks to the homeserv
 | Commits | The hub's receipt; only Add, Update, Remove, and GroupContextExtensions; every new or updated leaf; a closed `tieroute_group` whose kind doesn't change; each `basis` entry judged with `identity.JudgeBasis`, with the group's floor; `heads` following from the basis; `since` covering exactly the members, unchanged for those who stay; in a direct chat, no leaf of any identity but its two, even as a swap | §7.1, §11.1, §11.2, §11.3, §11.6, §11.8 |
 | Removes | Another device's leaf goes only when the commit binds a history of its identity in which the key isn't a device, and, without a floor for that identity, was a device at some point | §7.1, §11.9 |
 | Link bundles | Opened only with this device's one-time HPKE key, for its own identifier, and only from the identity itself | §7.2 |
+| Imported history | Only a version 2 part for this identity; each message's signature under the msg-key its `mk` names, signed by a device that appears in the sender's chain; a group message's `group` the chat's; a direct chat's messages from one of its two people | §7.3 |
 | App-messages | The signature by the sender's leaf key, that key's `msg-key`, the sender's identity and the group, no `channel`, and edits and deletes only by the author | §3.2.3, §12 |
 | Files | A media-ref's form; the downloaded bytes against its `sha256`, its key, and its `size` | §14 |
 | Hub forks | A second commit with a valid receipt for an epoch this device already applied stops the chat | §11.6 |
@@ -105,7 +107,7 @@ for ev := range eng.Events() { ... }
 - Community joins that need approval, following a community's move, re-creating a community's groups, and rotating the community metadata key after a kick or ban (§16.5, §16.6, §16.7).
 - The fork rule for community chains: Railcar follows the community server's chain, and stops at an entry it refuses.
 - Latching a group that hasn't latched when nothing else changes (§7.1). A device change latches it.
-- History in link bundles (§7.3): Railcar sends none, and doesn't import Reroute's yet, so a new device starts with an empty history in each chat.
+- Communities in link bundles: Railcar sends none, and a linked device doesn't join the ones a bundle lists, so it joins each community again with a code (§7.2 step 5).
 - Rejoining after an inbox gap or an expired commit (§11.9), and re-creating a stuck chat (§11.11).
 - Checking a message against the sender's leaf in the epoch it was sent in, when the leaf changed since. Such a message is dropped for now.
 
@@ -125,9 +127,9 @@ go test ./internal/chat -run E2E -v
 - `TestE2EInteropDecline`: each side declines the other's request.
 - `TestE2ERailcar`: two Railcar identities on two servers, one on the live stream, with typing, a restart that reloads the history and MLS state, and messages after it.
 - `TestE2ERailcarMutual`: two Railcar identities send each other requests at once, and end up with one direct chat.
-- `TestE2EInteropLinkFromReroute`: a Reroute identity with a chat approves Railcar as a new device, by Railcar's link code and a typed confirmation code, then a second Railcar by an approval code Reroute shows. Each gets the chat and messages go both ways with the contact on another homeserver.
-- `TestE2EInteropLinkToReroute`: Railcar approves a new Reroute device by its link code, and another by an approval code Railcar shows, adds each to the chat, then removes the first; the Reroute contact follows every change.
-- `TestE2ERailcarLink`: the same between Railcar devices, with a wrong confirmation code, an approval code two devices use, and the contact's system lines.
+- `TestE2EInteropLinkFromReroute`: a Reroute identity with a chat approves Railcar as a new device, by Railcar's link code and a typed confirmation code, then a second Railcar by an approval code Reroute shows. Each gets the chat with the history from before it, and messages go both ways with the contact on another homeserver.
+- `TestE2EInteropLinkToReroute`: Railcar approves a new Reroute device by its link code, which shows the earlier messages from Railcar's history, and another by an approval code Railcar shows, adds each to the chat, then removes the first; the Reroute contact follows every change.
+- `TestE2ERailcarLink`: the same between Railcar devices, with history that carries an edit and a reaction and isn't unread, a wrong confirmation code, an approval code two devices use, and the contact's system lines.
 - `TestE2EInteropRecover`: an identity reroute-cli made, with a direct chat with Railcar, is recovered in Railcar with its 12 words. Railcar's contact adds the new device, messages go both ways, and the words recover it a second time with the next recovery key.
 - `TestE2EInteropRecoverWithReroute` and `TestE2ERailcarRecover`: a Railcar identity is recovered in Railcar, and its contact, in Reroute or Railcar, adds the new device. Words in the wrong order are refused.
 - `TestE2EInteropPeople`: Reroute publishes a profile and sets its presence, and Railcar on the live stream sees both. Railcar publishes a profile with a picture and sets its presence; Reroute reads the profile, and another Railcar contact sees the presence, the picture, and auto-away.
