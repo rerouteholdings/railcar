@@ -792,3 +792,59 @@ func (cm *Community) RegisterEpochKey(ctx context.Context, key wire.Signed) erro
 func (cm *Community) VerifySigned(ctx context.Context, s wire.Signed) error {
 	return cm.c.resolver.VerifyServerSigned(ctx, cm.server, s, cm.c.clock.Now())
 }
+
+// JoinRequest is someone asking to join a community that needs approval.
+type JoinRequest struct {
+	ID   string `json:"id"`
+	Home string `json:"home"`
+	TS   int64  `json:"ts"`
+}
+
+// RequestJoin asks to join a community that needs approval
+// (POST join/request). Upload key packages first: a moderator can add
+// only devices that have some (§16.6).
+func (cm *Community) RequestJoin(ctx context.Context) error {
+	return cm.authed(ctx, http.MethodPost, "join/request", nil, struct{}{}, nil)
+}
+
+// JoinRequests lists the pending join requests, every page of them
+// (GET join/requests). It needs moderate.
+func (cm *Community) JoinRequests(ctx context.Context) ([]JoinRequest, error) {
+	var out []JoinRequest
+	after := ""
+	for range 100 {
+		var res struct {
+			Items []JoinRequest `json:"items"`
+			Next  string        `json:"next"`
+		}
+		var q map[string][]string
+		if after != "" {
+			q = map[string][]string{"after": {after}}
+		}
+		if err := cm.authed(ctx, http.MethodGet, "join/requests", q, nil, &res); err != nil {
+			return nil, err
+		}
+		out = append(out, res.Items...)
+		if res.Next == "" {
+			break
+		}
+		after = res.Next
+	}
+	return out, nil
+}
+
+// ApproveJoin approves a pending request, and claims one key package for
+// each of the joiner's devices (POST join/approve). The approving member
+// then commits the Add with its approval, and sends the Welcome.
+func (cm *Community) ApproveJoin(ctx context.Context, id string) ([]ClaimedKP, error) {
+	var res struct {
+		Packages []ClaimedKP `json:"packages"`
+	}
+	err := cm.authed(ctx, http.MethodPost, "join/approve", nil, map[string]string{"id": id}, &res)
+	return res.Packages, err
+}
+
+// DeclineJoin declines a pending request (POST join/decline).
+func (cm *Community) DeclineJoin(ctx context.Context, id string) error {
+	return cm.authed(ctx, http.MethodPost, "join/decline", nil, map[string]string{"id": id}, nil)
+}

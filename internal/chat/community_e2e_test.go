@@ -17,6 +17,12 @@ func (r *rerouteCLI) community(cmd string, args string, out any) {
 	r.t.Helper()
 	s := r.run("community", "run", cmd, args)
 	if out != nil {
+		// Skip warning lines before the answer.
+		for _, p := range []string{"\n{", "\n["} {
+			if i := strings.Index(s, p); i >= 0 && !strings.HasPrefix(s, "{") && !strings.HasPrefix(s, "[") {
+				s = s[i+1:]
+			}
+		}
 		if i := strings.IndexAny(s, "{[\"0123456789"); i >= 0 {
 			s = s[i:]
 		}

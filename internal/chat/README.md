@@ -59,6 +59,7 @@ What it does:
 
 - Creating a community: the create entry, with `everyone` holding only `talk`, the members group at epoch 0 with `community_head`, and a `#general` text channel that keeps history (§16.2.3). After every chain entry it appends, Railcar commits the new `community_head` to the members group, as Reroute does, so code joins are judged with the codes the chain holds.
 - Joining with a code (§16.6): it checks the chain and the code, and the GroupInfo and tree the community server serves, builds the external commit, and signs the join proof and the commit-request with the code's key. Until a member sends the keys, channels show without names.
+- Joins that need approval (§16.6): with a code for such a community, Railcar leaves key packages with the community server, asks with `POST join/request`, and follows the community's stream until the Welcome to the members group arrives, or a `join-declined` notice. A moderator gets a line in the first channel for each `join-request` notice, lists requests, and approves one: it claims the joiner's key packages with `POST join/approve`, commits the Add with its signed `add-approval` in the members group's `tieroute_group`, the request in `used`, and both identities' histories in `basis`, then sends the keys right after the Welcome. `SetApproval` turns approval on or off.
 - When someone joins, the member with the lowest leaf index uploads what has built up past the last segment, then sends the keys, after 0 to 2 s; anyone else does after 10 s if nobody has (§16.5, §16.6).
 - Channel messages, replies, edits, reactions, and deletes, which a moderator who outranks the author can make too, with `POST messages/delete` after the signed delete (§16.7). A timed-out member's messages are dropped.
 - History: reading segments with each history key until one opens them, checking every line, and verifying every message as imported history (§16.5, §7.3); uploading segments that start at the first number this device holds and never overlap a stored one; asking for missing numbers with `history-request`, and answering requests.
@@ -72,6 +73,7 @@ What it does:
 | Community chain | Form, place, signature by a device the signer's chain added at some point, time, authority on the state before the entry, and each op's rules | §16.2.2, §16.2.3 |
 | Community commits | The community server's receipt; `community_head` in the members group, and never going back in a pinned group; judged by the chain as of that entry | §16.2, §16.5 |
 | Code joins | The join proof for this joiner, epoch, and commit; a live code as of the named entry, counting the joins this device saw; its creator a member; the joiner not banned; at most 1,000 members | §16.6 |
+| Approval joins | An Add of a new identity to the members group, other than a code join, carries an `add-approval` for that one identity, signed by the committer with a device in the history the commit binds for them, who holds `moderate` at the commit's `community_head`; its epoch, expiry, and request checked as §11.8 does, and the commit's `basis` binding the joiner and the approver | §16.6 |
 | Adds and Removes | A new member added only by someone with `moderate`, or in a pinned restricted group only with a role that sees it; Removes by leave, kick by someone who outranks, a ban, lost sight of the channel, or a removed device | §16.5, §16.7 |
 | Leaves | The device appears in its identity's chain at some point, and its `msg-key` checks out | §16.5 |
 | Channel messages | The channel matches the delivery's, and the group carries it | §12 |
@@ -107,7 +109,7 @@ for ev := range eng.Events() { ... }
 - Removing a contact, and blocking.
 - Re-creating a group chat, and linking a Welcome's `replaces` to the old chat: a re-created group shows as a separate chat (§11.11).
 - Moving a group's hub (§11.11).
-- Community joins that need approval, following a community's move, re-creating a community's groups, and rotating the community metadata key after a kick or ban (§16.5, §16.6, §16.7).
+- Following a community's move, re-creating a community's groups, and rotating the community metadata key after a kick or ban (§16.5, §16.6, §16.7).
 - The fork rule for community chains: Railcar follows the community server's chain, and stops at an entry it refuses.
 - Latching a group that hasn't latched when nothing else changes (§7.1). A device change latches it.
 - Communities in link bundles: Railcar sends none, and a linked device doesn't join the ones a bundle lists, so it joins each community again with a code (§7.2 step 5).
@@ -145,6 +147,7 @@ go test ./internal/chat -run E2E -v
 - `TestE2EInteropGroups`: Railcar and Reroute across two homeservers. Railcar creates a group, adds a member as admin, and makes Reroute an admin, who removes someone. Reroute creates a group; Railcar, not an admin, asks to add someone, Reroute approves, and Railcar's commit with the approval passes Reroute's checks. The other way, Reroute asks and Railcar approves. Renames both ways, then each side leaves and the other commits it.
 - `TestE2ERailcarGroups`: the same between Railcar identities, with the last admin leaving and admin passing to the longest-standing member.
 - `TestE2EInteropCommunities`: Reroute creates a community, and Railcar joins with a code, gets the keys, reads earlier messages from Reroute's history segment, and messages go both ways with sequence numbers. Railcar creates a community, and Reroute joins with a Railcar code, gets Railcar's keys, and reads Railcar's segment. Railcar adds a role and a restricted channel only it sees, and Reroute, given the role, reads it.
+- `TestE2EInteropApprovalJoins`: Reroute approves Railcar's request to join its community, and Railcar approves Reroute's into its own. A Railcar member checks the approval in each commit and keeps going.
 - `TestE2ERailcarCommunities`: between Railcar identities, with a member who can't make codes, a late joiner reading history and reporting a message, a moderator's delete, read positions, a timeout, a kick, and typing in a channel.
 - `TestE2ERailcarReceipts`: two Railcar identities on the live stream. Nothing asks until the sender turns asking on; the reader is asked once, sends nothing before agreeing, and nothing after declining; receipts mark only the messages that asked. Reroute shows a message that asks.
 

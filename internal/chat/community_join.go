@@ -168,6 +168,9 @@ func (e *Engine) JoinCommunity(ctx context.Context, code string) (string, error)
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	if cm := e.st.Communities[server]; cm != nil && !cm.Left {
+		if cm.Asking {
+			return server, ErrAskedToJoin
+		}
 		return server, nil
 	}
 	if err := conn.SignIn(ctx); err != nil {
@@ -192,11 +195,11 @@ func (e *Engine) JoinCommunity(ctx context.Context, code string) (string, error)
 	if !st.CodeLive(key.Public(), e.c.Clock().Now().Unix(), 0) {
 		return "", errors.New("chat: that code doesn't work anymore")
 	}
-	if st.Approval {
-		return "", errors.New("chat: joins to this community need approval, which comes in a later version of Railcar")
-	}
 	if st.Banned(e.c.ID(), e.c.Server()) {
 		return "", errors.New("chat: you can't join this community")
+	}
+	if st.Approval {
+		return server, e.askToJoin(ctx, conn, cm)
 	}
 	var lastErr error
 	for attempt := 0; attempt < 4; attempt++ {

@@ -220,6 +220,9 @@ func act(ctx context.Context, eng *chat.Engine, chatID string, a ui.Action) (str
 		return "Created " + a.Arg2 + " on " + a.Arg, nil
 	case "join-community":
 		s, err := eng.JoinCommunity(ctx, a.Arg)
+		if errors.Is(err, chat.ErrAskedToJoin) {
+			return "You asked to join " + s + ". You're in once a moderator approves", nil
+		}
 		if err != nil {
 			return "", err
 		}
@@ -234,6 +237,43 @@ func act(ctx context.Context, eng *chat.Engine, chatID string, a ui.Action) (str
 		return "", err
 	}
 	switch a.Kind {
+	case "join-requests":
+		ids, err := eng.JoinRequests(ctx, server)
+		if err != nil {
+			return "", err
+		}
+		if len(ids) == 0 {
+			return "Nobody is asking to join", nil
+		}
+		names := make([]string, len(ids))
+		for i, id := range ids {
+			names[i] = "@" + eng.Handle(id)
+		}
+		return "Asking to join: " + strings.Join(names, ", "), nil
+	case "approve-join", "decline-join":
+		id, err := who()
+		if err != nil {
+			return "", err
+		}
+		if a.Kind == "decline-join" {
+			return "Declined", eng.DeclineJoin(ctx, server, id)
+		}
+		if err := eng.ApproveJoin(ctx, server, id); err != nil {
+			return "", err
+		}
+		return "Approved. They're in", nil
+	case "approval":
+		on := strings.EqualFold(strings.TrimSpace(a.Arg), "on")
+		if !on && !strings.EqualFold(strings.TrimSpace(a.Arg), "off") {
+			return "", errors.New("type :approval on or :approval off")
+		}
+		if err := eng.SetApproval(ctx, server, on); err != nil {
+			return "", err
+		}
+		if on {
+			return "Joins need a moderator's approval now", nil
+		}
+		return "Codes let people join without approval now", nil
 	case "make-code":
 		return eng.MakeCode(ctx, server, 7, 25)
 	case "add-channel", "add-voice-channel":

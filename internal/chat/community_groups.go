@@ -319,6 +319,29 @@ func (e *Engine) judgeCommunityCommit(ctx context.Context, cm *Community, g *CGr
 		}
 		cm.Uses[hash]++
 	} else {
+		var newPeople []string
+		for id := range adds {
+			if !beforeIDs[id] {
+				newPeople = append(newPeople, id)
+			}
+		}
+		if members && len(newPeople) > 0 {
+			// An approval join (§16.6).
+			var old *GroupExt
+			if data, _ := before.Extension(ExtGroup); data != nil {
+				old, _ = ParseGroupExt(data)
+			}
+			if old == nil {
+				old = &GroupExt{}
+			}
+			if err := e.checkCommunityApproval(ctx, cm, g, old, next, st, committer, newPeople, before.Epoch, receiptTS); err != nil {
+				var r retryable
+				if errors.As(err, &r) {
+					return nil, err
+				}
+				return bad("%v", err)
+			}
+		}
 		for id := range adds {
 			if beforeIDs[id] {
 				continue // another device of a member: always allowed (§16.5)
@@ -640,6 +663,9 @@ func (e *Engine) communityWelcome(ctx context.Context, cm *Community, d *client.
 	cm.Groups[d.Group] = g
 	if err := e.save(); err != nil {
 		return err
+	}
+	if d.Group == cm.MembersGroup {
+		e.joinedByApproval(cm)
 	}
 	e.refreshChannels(cm)
 	if err := e.topUpCommunity(ctx, cm); err != nil {

@@ -174,7 +174,8 @@ type Backend interface {
 //     name), add-role (Arg: the name, Arg2: the permissions, separated by
 //     spaces), give-role (Arg: a handle, Arg2: a role's name), history,
 //     kick, ban (Arg: a handle), timeout (Arg: a handle, Arg2: minutes),
-//     and leave-community.
+//     join-requests, approve-join, decline-join (Arg: a handle), approval
+//     (Arg: on or off), and leave-community.
 //   - Profiles and presence (§13): set-presence (Arg: a state, Arg2: a
 //     status message), set-status, set-name, set-bio, set-links (Arg: the
 //     text), set-avatar (Arg: a path, or none), show-profile, and

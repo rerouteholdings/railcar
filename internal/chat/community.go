@@ -70,6 +70,9 @@ type Community struct {
 	Stopped string `json:"stopped,omitempty"`
 	// Left is set once this identity left or was removed.
 	Left bool `json:"left,omitempty"`
+	// Asking is set while this identity waits for a moderator to approve
+	// its request to join (§16.6).
+	Asking bool `json:"asking,omitempty"`
 }
 
 // CGroup is one of a community's MLS groups.
@@ -535,6 +538,10 @@ func (e *Engine) processCommunity(ctx context.Context, cm *Community, it *client
 			return err
 		case "removed":
 			e.removedFromCommunity(ctx, cm, "You were removed from the community")
+		case "join-declined":
+			e.declinedJoin(cm)
+		case "join-request":
+			e.joinRequested(ctx, cm, n)
 		}
 		return nil
 	}
