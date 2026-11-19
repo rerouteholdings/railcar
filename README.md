@@ -2,7 +2,7 @@
 
 Railcar is a terminal client for Tieroute, the federated, end-to-end encrypted (E2EE) chat protocol. Reroute Holdings LLC writes it from the public Tieroute specification, separately from the Reroute app, so it doubles as a check that the specification is enough to build a working client from.
 
-Railcar is in early development. It has direct chats with contacts, which work with Reroute, the Reroute Holdings LLC app. Group chats come next. The plan and its progress are below.
+Railcar is in early development. It has direct chats with contacts, and links devices, both working with Reroute, the Reroute Holdings LLC app. Group chats come next. The plan and its progress are below.
 
 ## What it is
 
@@ -15,8 +15,8 @@ Railcar is in early development. It has direct chats with contacts, which work w
 
 1. The base: `tieroute-mls`, identities, signing up, sessions, and the live stream. Done.
 2. Direct chats with contacts, working with Reroute. Done: invite codes, contact requests, and direct chats with replies, edits, deletes, reactions, and typing indicators, tested against Reroute's command-line client on one homeserver and across two.
-3. Group chats and communities. Next.
-4. Files, presence, linking devices, backups, and moving to another homeserver.
+3. Linking devices, group chats, and communities. In progress: linking devices is done. A new device signs in with a link code and a confirmation code, or with an approval code another device shows, and gets the contact list and every chat. A signed-in device approves new devices, lists them, and removes them. Each works with Reroute's command-line client both ways. Group chats and communities come next.
+4. Files, presence, backups, and moving to another homeserver.
 5. Calls, and packages.
 
 ## Build
@@ -35,7 +35,7 @@ That builds `tieroute-mls` first, then leaves `railcar` in the repository's root
 ./railcar
 ```
 
-The first time, Railcar asks for a homeserver, a handle, and the homeserver's registration code, and shows your 12 recovery words. Then press Ctrl+N to add a contact with their code, or type `:invite` to make a code to give someone. `./railcar --help` lists the options, such as `--profile` to keep more than one identity.
+The first time, Railcar asks for a homeserver, a handle, and the homeserver's registration code, and shows your 12 recovery words. Or choose **Sign in with another device** to use an identity you already have in Reroute or another copy of Railcar. Then press Ctrl+N to add a contact with their code, or type `:invite` to make a code to give someone. Type `:add-device` to add a new device, and `:devices` to see yours. `./railcar --help` lists the options, such as `--profile` to keep more than one identity.
 
 Railcar keeps each profile's key in the system keychain. Without one, it stops, unless you run it with `--key-file`, which keeps the key in a file next to the data instead.
 

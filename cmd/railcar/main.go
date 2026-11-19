@@ -46,8 +46,8 @@ Options:
   --version              Print the version and exit.
   -h, --help             Show this help.
 
-Railcar is in early development: it has direct chats with contacts, and group
-chats come next.
+Railcar is in early development: it has direct chats with contacts, and signs
+in with another device. Group chats come next.
 `
 
 // devServers collects --dev-server flags.

@@ -9,10 +9,10 @@ This page describes `internal/tieroute`, the part of Railcar that speaks the Tie
 | `wire` | I-JSON decoding, base64url byte strings, JCS (RFC 8785), the signed envelope, the error format, and the media type and signature context (§4) |
 | `sig` | Strict Ed25519 (§4.3), and the composite ML-DSA-65 + Ed25519 signature `MLDSA65-Ed25519-SHA512` (§3.2), with Go's `crypto/mldsa` |
 | `identity` | Device keys and message keys (§3.2.3), recovery codes and their 12 words (§6.1), identity chains and their validation (§6.2 to §6.4), the fork rule (§6.4.1), vouching (§6.5), snapshot authorization (§7.1), `msg-key` and `kp-binding`, and handle syntax (§5.4) |
-| `codes` | Contact verification codes (§6.7), and the keys of community join codes (§16.6) |
+| `codes` | Contact verification codes (§6.7), confirmation codes and approval tags for linking devices (§7.2, §7.2.1), and the keys of community join codes (§16.6) |
 | `discovery` | Server documents and their API base URLs (§5.1, §8.1), and handle records over HTTPS and DNS (§5.3) |
 | `store` | The profile directory: records encrypted at rest under a key in the system keychain |
-| `client` | Signing up, signing in, chains, handles, key packages, the inbox, and the live stream |
+| `client` | Signing up, signing in, linking devices, chains, handles, key packages, the inbox, and the live stream |
 
 ## The client API
 
@@ -51,6 +51,30 @@ Other calls:
 - `c.Clock()` is the homeserver's time. Warn the user when `Skew()` is over a minute (§8.4).
 - `c.Warning()` is a warning to show about the profile, such as a key stored in a file.
 
+## Linking devices
+
+A new device signs in to an existing identity with another device's help (§7.2). The new device's keys stay in memory until it's added; `Finish` then creates the profile.
+
+```go
+l, err := client.StartLink(ctx, "chat.example.com", "kat.chat.example.com", opts)
+show(l.Code().String())            // as a QR code and as text
+err = l.Confirm(ctx, "7K2M-9QXD")  // the code the other device shows
+c, err := l.Finish(ctx, profileDir) // client.ErrNotLinkedYet until it's added
+```
+
+`client.StartLinkWithApproval(ctx, "approve-…", opts)` starts from an approval code another device shows instead (§7.2.1). It leaves the approval tag in its link proof, so there's no confirmation code: call `Finish` until it's added.
+
+A linked device opens its link bundle from the inbox with `c.OpenLinkBundle(data)`, which keeps the account key and forgets the one-time HPKE key. `c.LinkPending()` says whether it's still waiting for one.
+
+On the device that approves:
+
+- `c.ApproveLinkCode(ctx, code)` fetches the key the new device parked (`GET link/proof/{device}`), checks it against the code, and makes the confirmation code. Show `client.LinkWarning` before it. `Check` then looks for the new device's answer; `client.ErrWrongConfirmation` means it sent back another code.
+- `c.NewApprovalCode()` makes an approval code, which works for 10 minutes and for one device. Its `Check` lists the waiting proofs (`GET link/proofs`) and returns the one device whose tag matches; when two devices used the code, it returns `client.ErrApprovalUsedTwice` and adds neither.
+- `c.AddLinkedDevice(ctx, dev, name, bundle)` appends `add-device` with the name the user gave, and sends the link bundle, sealed with HPKE to the new device's key (§7.2 steps 3 and 4). The chat layer fills in the contact and chat lists, and adds the device to every chat.
+- `c.RemoveDevice(ctx, key)` appends `remove-device` (§7.6).
+
+`ParseLinkCode` and `ParseApprovalCode` read codes as the client API says: any case, a space instead of the dash after the prefix, and only letters and digits counting in the bytes. A short-form link code, with only the device key, gets no link bundle.
+
 ## Key packages and MLS
 
 The MLS layer makes key packages through `client.KeyPackageMaker`:
@@ -77,7 +101,7 @@ Servers on a local test network are reached through `Options.Origins`, which map
 
 ## Tests
 
-The shared test vectors are copied into `testdata/vectors`. `go test ./internal/tieroute/...` checks every wire version 2 vector this part of Railcar covers: `composite`, `signed`, `msgkey`, `recovery`, `chain`, `fork`, `vouch`, `basis`, `s2s`, `codes`, and `code`, plus `ed25519.json` and `account.json` from version 1, which still hold. When the vectors change, copy them here again.
+The shared test vectors are copied into `testdata/vectors`. `go test ./internal/tieroute/...` checks every wire version 2 vector this part of Railcar covers: `composite`, `signed`, `msgkey`, `recovery`, `chain`, `fork`, `vouch`, `basis`, `s2s`, `codes`, `code`, and `link`, plus `ed25519.json`, `account.json`, and `link.json` (the short link code and confirmation-code normalization) from version 1, which still hold. The vectors don't cover link bundles or approval tags yet, so those are tested against reroute-cli. When the vectors change, copy them here again.
 
 The end-to-end test runs against a real rerouted, and is skipped unless `RAILCAR_REROUTED` names a rerouted binary:
 

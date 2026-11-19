@@ -10,13 +10,14 @@ go run ./cmd/railcar --demo
 
 ## Screens
 
-1. Onboarding. A Huh form offers two choices: **Create an identity**, or **Sign in with your recovery code**.
+1. Onboarding. A Huh form offers three choices: **Create an identity**, **Sign in with another device**, or **Sign in with your recovery code**.
    - Creating an identity asks for the homeserver, the handle, and the registration code, and checks the handle syntax (§5.4). Then it shows the 12 recovery words once, with a warning to write them down. After **I've written them down**, it asks for 3 of the words, chosen at random by position, as §6.1 asks of clients. Answers match when they're the same after trimming, in any case. Esc goes back to the words.
    - Nothing is registered until the words are typed back. If the homeserver then refuses the handle or the registration code, the form comes back with the error, and the words stay the same: after fixing it, the identity registers without asking for the words again.
-   - Signing in asks for the handle and the 12 words.
+   - Signing in with another device (§7.2) offers two ways. **Show a code here for the other device to approve** asks for the handle and homeserver, then shows the link code as a QR code, drawn with half-block characters, and as text, with a field for the confirmation code the other device shows. **Enter an approval code from the other device** takes an approval code instead (§7.2.1). Either way, Railcar tries to sign in every 2 seconds until the other device has added it, then opens the main view, where the chats arrive as the other devices add this one.
+   - Signing in with the recovery code asks for the handle and the 12 words. It comes in a later version.
 2. The main view. It has three panes and a status bar:
    - The chat list, newest activity first, with unread counts. Press / to find a chat by its title or a member's name or handle. Contact requests are in the list too: someone else's, until it's accepted or declined, and the identity's own, until the chat starts.
-   - The open chat. Messages are grouped by day, and by sender within a day, with a time on each group. Replies show the message they answer, edited messages say so, deleted ones say **Message deleted**, and reactions show under the message with their counts. The line under the chat's title says who's typing. Below the messages is the composer.
+   - The open chat. Messages are grouped by day, and by sender within a day, with a time on each group. Replies show the message they answer, edited messages say so, deleted ones say **Message deleted**, and reactions show under the message with their counts. The line under the chat's title says who's typing. Lines Railcar shows on its own, such as "@kat has a new device", are centered, without a sender (§11.9). Below the messages is the composer.
    - An open contact request shows who it's from, with a to accept it and d to decline it.
    - The details pane, opened with Ctrl+O. It lists the chat's members and handles.
    - The status bar shows the identity's handle, its homeserver, and the stream's state: **Connected**, **Connecting** or **Reconnecting** with a spinner, or **Offline**.
@@ -25,6 +26,9 @@ go run ./cmd/railcar --demo
 3. Overlays. Press ? for every key, and Ctrl+P or : for the command palette. The palette finds commands and chats as you type, and runs commands by name, such as `:quit` and `:sign-out`. Signing out asks first.
    - Ctrl+N, or `:add`, opens **Add a contact**, which takes someone's code: `@handle::code`, or its link (§9.4). `:add @ravi.example.com::Kx82mPq1Za` fills it in.
    - `:invite` makes an invite code, shows it, and copies it to the clipboard where the terminal allows that (§9.1).
+   - `:add-device` opens **Add a device**, which takes a new device's link code and a name for it. It then shows the warning §7.2 requires and the confirmation code to type on the new device, and waits for it. `:add-device link-…` fills in the code.
+   - `:approval-code` opens **Show an approval code**: the warning first, then the code as a QR code and as text, for 10 minutes and one device (§7.2.1).
+   - `:devices` opens **Your devices**: each device's name and the date it was added. d removes the selected one, after asking, and a adds one.
    - `:reply`, `:edit`, `:delete`, and `:react` act on the latest message: someone else's for replying and reacting, the identity's own for editing and deleting. `:react 🎉` picks the emoji; it's 👍 otherwise, and reacting again with the same emoji takes it back.
 
 The mouse works too: click a chat to open it, click a pane to move to it, and scroll the messages or the chat list.
@@ -64,6 +68,14 @@ The interface reaches the protocol only through `Backend`, in `backend.go`. It c
 | `SignUp` | Starts an identity with a homeserver, a handle, and a registration code, and returns its 12 recovery words |
 | `FinishSignUp` | Called after the user has typed back the words: registers the identity, and forgets the words. `ErrSignUpRefused` sends the user back to the form |
 | `Recover` | Signs in to an existing identity with its handle and recovery words |
+| `StartLink`, `StartLinkWithCode` | Start signing in with another device: show a link code, or use an approval code |
+| `ConfirmLink` | Sends back the confirmation code the other device shows |
+| `FinishLink` | Signs in once the other device has added this one, or returns `ErrNotLinkedYet` |
+| `CancelLink` | Gives up on signing in with another device |
+| `ApproveLinkCode`, `ShowApprovalCode` | Start adding a new device: by its link code, which returns the confirmation code, or by an approval code |
+| `FinishApproval` | Adds the new device once it has answered, or returns false while it hasn't |
+| `CancelApproval` | Stops adding a device, and forgets its code |
+| `Devices`, `RemoveDevice` | List the identity's devices, and remove one (§7.6) |
 | `Connect` | Starts the live stream, which reconnects on its own |
 | `Events` | A channel of `StreamChanged`, `ChatChanged`, `ChatRemoved`, `MessageAdded`, `MessageChanged`, `Typing`, and `SignedOut` events |
 | `Chats` | Every direct chat and group chat, and every contact request, as a `ContactRequest` or `SentRequest` |
