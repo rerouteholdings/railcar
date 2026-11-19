@@ -13,7 +13,7 @@ This page describes `internal/tieroute`, the part of Railcar that speaks the Tie
 | `discovery` | Server documents and their API base URLs (§5.1, §8.1), and handle records over HTTPS and DNS (§5.3) |
 | `store` | The profile directory: records encrypted at rest under a key in the system keychain |
 | `community` | Community chains and their validation, with the state after each entry (§16.2); sealed names (§16.2.4); join proofs and code liveness (§16.6); and history segments: encrypting, building, and reading them (§16.5) |
-| `client` | Signing up, signing in, linking devices, chains, handles, key packages, the inbox, and the live stream |
+| `client` | Signing up, signing in, linking devices, chains, handles, key packages, the inbox, the live stream, account data and backups, moves, and reports |
 
 ## The client API
 
@@ -53,6 +53,9 @@ Other calls:
 - `c.Community(server)` is this device's connection to a community server (§16.1): it fetches the server's document there directly, signs in with the device's key and the identity's homeserver (§16.6 step 3), and calls the community server API, from `Preview`, `Create`, `Chain`, `Append`, and `Join` to `Send`, `Inbox`, `Stream`, the history segment calls, read positions, and `Kick`. Its stream reports voice signaling as `EventVoice`.
 - `c.SetPresence(ctx, state, status)` sets the presence state and status message (§13.2), and `client.ParsePresence` reads the stream's presence frames, which arrive as `EventPresence`. `c.PublishProfile(ctx, p)` signs and publishes the profile with the next `v`, and `c.FetchProfile(ctx, id)` fetches one and checks that a current device of the identity signed it (§13.1); `client.ErrNoProfile` means there's none.
 - `c.UploadFile(ctx, data, name, mime)` encrypts a file with a new key and uploads it, and returns its `MediaRef`; `c.DownloadFile(ctx, ref)` fetches one through the homeserver, checks its hash, and decrypts it (§14). `client.ErrFileExpired` and `client.ErrFileRemoved` are the `410` answers. `c.UploadPublic` and `c.DownloadPublic` are the same for profile pictures, which aren't encrypted.
+- `c.AccountKeys`, `c.SetPassphrase`, `c.RemovePassphrase`, and `c.UnlockWithPassphrase` manage the wrapped copies of the account key; the passphrase copy uses Argon2id with §3's parameters, m in KiB (§7.4, §7.5). `c.GetAccountData` and `c.PutAccountData` read and write the account data, bound to its identity and version, and keep the members Railcar doesn't use. `c.PutBackup`, `c.ListBackup`, and `c.GetBackup` move backup segments, encrypted under the backup key.
+- `c.Move(ctx, req)` moves the identity to another homeserver (§6.6): `check` first, the move reservation, the append on the old home, then the registration with a signed `move`, and the switch. `c.PendingMove` and `c.FinishMove` resume one that stopped partway. `c.Restarted` closes when this device switches homeservers, and the stream then starts again at the new home.
+- `c.Report(ctx, report, forward)` sends a report to the homeserver (§17.3), and `Community.Report` to a community server.
 - `c.Clock()` is the homeserver's time. Warn the user when `Skew()` is over a minute (§8.4).
 - `c.Warning()` is a warning to show about the profile, such as a key stored in a file.
 
