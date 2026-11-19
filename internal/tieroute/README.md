@@ -42,6 +42,12 @@ Other calls:
 - `c.ResolveHandle(ctx, handle)` resolves a handle through the homeserver and checks both directions (§5.3). `client.ErrHandleMismatch` means "handle no longer valid".
 - `c.Append(ctx, ops...)` appends a device-signed entry to the identity's chain, such as `identity.AddDevice(pub, name)`.
 - `c.Send(ctx, ...)` and `c.SendLink(ctx, data)` submit deliveries.
+- `c.CreateInvite(ctx, opts)` makes an invite code (§9.1). `client.ParseInviteCode` reads `@handle::code`, a bare `@handle`, or either as a link on the link domain (§9.4), and refuses any other form with `client.ErrUnknownCode`.
+- `c.RequestContact(ctx, to, invite)` signs and sends a contact request (§9.2). `c.AcceptContact`, `c.DeclineContact`, `c.CancelContact`, and `c.RemoveContact` answer and manage them, and `c.Contacts(ctx)` lists the homeserver's contact list, every page of it. `c.VerifyContactRequest` checks a request against the requester's chain, and `c.AcceptChain` keeps a chain that came with a notice.
+- `c.ClaimKeyPackages(ctx, id, opts)` claims one key package per current device (§11.4), with each one's `kp-binding`. The caller checks them.
+- `c.CreateGroup`, `c.RegisterGroup`, `c.UnregisterGroup`, `c.FetchCommits`, and `c.RegisterEpochKey` are the group calls (§11.5, §11.6). `Outgoing.Welcomes` sends Welcomes with a commit, delivered only if the hub accepts it.
+- `c.VerifyServerSigned(ctx, server, s)` checks an object a server signed, such as a hub's commit receipt. Documents of servers other than the homeserver come through the homeserver (`GET servers/{name}`), so those servers don't learn the device's address.
+- `c.Profile()` is the profile, where other parts of Railcar keep their own records.
 - `c.Clock()` is the homeserver's time. Warn the user when `Skew()` is over a minute (§8.4).
 - `c.Warning()` is a warning to show about the profile, such as a key stored in a file.
 
