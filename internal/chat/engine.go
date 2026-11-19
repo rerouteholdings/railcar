@@ -161,6 +161,15 @@ func (e *Engine) save() error {
 // EnsureKeyPackages tops up this device's key packages on the homeserver
 // to 50, with a last-resort one (§11.4).
 func (e *Engine) EnsureKeyPackages(ctx context.Context) error {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	return e.topUp(ctx)
+}
+
+// topUp is EnsureKeyPackages for a caller that holds e.mu. Making key
+// packages saves the MLS state, which sets the point Revert returns to, so
+// it never runs while another change is in progress.
+func (e *Engine) topUp(ctx context.Context) error {
 	n, lastResort, err := e.c.KeyPackageCount(ctx)
 	if err != nil {
 		return err

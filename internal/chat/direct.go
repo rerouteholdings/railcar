@@ -430,6 +430,10 @@ func (e *Engine) welcome(ctx context.Context, d *client.Delivery) error {
 		return err
 	}
 	e.emit(Event{Kind: EventChat, Chat: ptr(ch.public())})
+	// The Welcome used up one of this device's key packages.
+	if err := e.topUp(ctx); err != nil {
+		e.log.Debug("chat: key packages", "err", err)
+	}
 	return nil
 }
 
