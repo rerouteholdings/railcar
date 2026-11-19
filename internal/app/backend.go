@@ -690,6 +690,9 @@ func friendly(err error) error {
 	if errors.Is(err, client.ErrRegistrationClosed) {
 		return errors.New("That homeserver isn't taking new identities")
 	}
+	if errors.Is(err, ui.ErrPassphraseNeeded) {
+		return err
+	}
 	s := err.Error()
 	for _, p := range []string{"chat: ", "client: ", "discovery: ", "identity: ", "store: ", "wire: "} {
 		s = strings.ReplaceAll(s, p, "")

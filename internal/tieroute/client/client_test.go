@@ -32,12 +32,27 @@ func TestAccountWrapVector(t *testing.T) {
 		Via      string `json:"via"`
 	}
 	var v struct {
-		AccountKeyHex string  `json:"account_key_hex"`
-		Identifier    string  `json:"identifier"`
-		Staged        wrapped `json:"staged_wrapped_key"`
-		Wrapped       wrapped `json:"wrapped_key"`
+		AccountKeyHex string `json:"account_key_hex"`
+		AccountData   struct {
+			AD        string `json:"associated_data"`
+			CTHex     string `json:"ct_hex"`
+			NonceHex  string `json:"nonce_hex"`
+			Plaintext string `json:"plaintext"`
+			Version   uint64 `json:"version"`
+		} `json:"account_data"`
+		Identifier string  `json:"identifier"`
+		Staged     wrapped `json:"staged_wrapped_key"`
+		Wrapped    wrapped `json:"wrapped_key"`
 	}
 	vectors.Load(t, "account.json", &v)
+	// Account data, bound to its identity and version (§7.4).
+	d := v.AccountData
+	if ad := accountDataAD(v.Identifier, d.Version); string(ad) != d.AD {
+		t.Errorf("account data: associated data %s", ad)
+	}
+	if ct, err := sealAESGCMNonce(vectors.Hex(t, v.AccountKeyHex), vectors.Hex(t, d.NonceHex), []byte(d.Plaintext), accountDataAD(v.Identifier, d.Version)); err != nil || hex.EncodeToString(ct) != d.CTHex {
+		t.Errorf("account data: ct %x", ct)
+	}
 	for _, w := range []wrapped{v.Wrapped, v.Staged} {
 		var commit []byte
 		if w.Commit != "" {

@@ -181,6 +181,10 @@ type Backend interface {
 //     auto-away (Arg: on or off).
 //   - Files (§14): attach (Arg: a path), and save (Arg: a folder, or
 //     empty for the default), which saves the latest attachments.
+//   - Backups (§7.5): backup-on (Arg: the passphrase), backup-now,
+//     backup-status, backup-off, and restore-backup (Arg: the
+//     passphrase, or empty when this device has the account key; a
+//     backend returns ErrPassphraseNeeded when it needs one).
 //   - Reports (§17.2): report (Arg: the reason, Arg2: a message's ID,
 //     Arg3: forward to also send it to the sender's homeserver).
 //   - Read receipts (§13.3): read-receipts, whether to send them in the
@@ -192,6 +196,10 @@ type Action struct {
 	Arg2 string
 	Arg3 string
 }
+
+// ErrPassphraseNeeded is what a restore returns on a device that needs
+// the backup passphrase to open the backup.
+var ErrPassphraseNeeded = errors.New("enter the backup passphrase")
 
 // ErrNoIdentity is what Open returns for a profile without an identity.
 var ErrNoIdentity = errors.New("this profile doesn't have an identity yet")

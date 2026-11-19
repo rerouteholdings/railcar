@@ -82,6 +82,8 @@ func (d *DemoBackend) Act(_ context.Context, chat string, a Action) (string, err
 		return "Your messages ask for read receipts now", nil
 	case "report":
 		return "Reported. The demo sends nothing", nil
+	case "backup-on", "backup-now", "backup-off", "restore-backup", "backup-status":
+		return "The demo has no backup", nil
 	case "read-receipts":
 		if c == nil {
 			return "", errors.New("Open a chat first")

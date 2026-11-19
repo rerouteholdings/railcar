@@ -46,6 +46,7 @@ const (
 	overlayAttach
 	overlayReceipts
 	overlayReport
+	overlayPassphrase
 )
 
 // narrowWidth is the width under which the main view shows one pane at a
@@ -132,6 +133,9 @@ type mainView struct {
 
 	// report is the report waiting for the user to confirm it.
 	report reportState
+
+	// pass is the backup passphrase box.
+	pass passState
 
 	// follow is the handle of a contact request that was open when it left
 	// the list. Their direct chat opens when it arrives.
@@ -735,6 +739,8 @@ func (m *mainView) update(a *App, msg tea.Msg) tea.Cmd {
 	case noticeMsg:
 		m.notice = msg.text
 		return nil
+	case passDoneMsg:
+		return m.passDone(a, msg)
 	case contactsMsg, groupMadeMsg, actedMsg:
 		cmd, _ := m.handleGroupMsg(a, msg)
 		return cmd
@@ -860,6 +866,8 @@ func (m *mainView) keyPress(a *App, msg tea.KeyPressMsg) tea.Cmd {
 		return m.receiptsKey(a, msg)
 	case overlayReport:
 		return m.reportKey(a, msg)
+	case overlayPassphrase:
+		return m.passphraseKey(a, msg)
 	case overlaySignOut:
 		switch msg.String() {
 		case "enter", "y":
@@ -1117,6 +1125,8 @@ func (m *mainView) view(a *App) string {
 		return overlayOn(screen, m.receiptsView(a), a.width, a.height)
 	case overlayReport:
 		return overlayOn(screen, m.reportView(a), a.width, a.height)
+	case overlayPassphrase:
+		return overlayOn(screen, m.passphraseView(a), a.width, a.height)
 	case overlayAddContact:
 		return overlayOn(screen, m.addContactView(a), a.width, a.height)
 	case overlayAttach:

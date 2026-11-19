@@ -188,3 +188,19 @@ func TestReportShowsWhatGoes(t *testing.T) {
 		t.Fatal("the box stayed")
 	}
 }
+
+func TestBackupPassphraseHidden(t *testing.T) {
+	a, b := started(t, 120, 40)
+	runCommand(a, b, "backup-on")
+	if a.main.overlay != overlayPassphrase || !strings.Contains(plain(a), "Turn on the backup") {
+		t.Fatal("the passphrase box didn't open")
+	}
+	send(a, b, typeText("signal lantern gravel")...)
+	if strings.Contains(plain(a), "lantern") {
+		t.Fatal("the passphrase shows")
+	}
+	send(a, b, tea.KeyPressMsg{Code: tea.KeyEnter})
+	if a.main.overlay != overlayNone {
+		t.Fatalf("the box stayed: %q", a.main.pass.err)
+	}
+}

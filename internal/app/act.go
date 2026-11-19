@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/rerouteholdings/railcar/internal/chat"
+	"github.com/rerouteholdings/railcar/internal/tieroute/client"
 	"github.com/rerouteholdings/railcar/internal/tieroute/community"
 	"github.com/rerouteholdings/railcar/internal/ui"
 )
@@ -123,6 +124,9 @@ func act(ctx context.Context, eng *chat.Engine, chatID string, a ui.Action) (str
 		return msg, err
 	}
 	if msg, ok, err := actReceipts(ctx, eng, chatID, a); ok {
+		return msg, err
+	}
+	if msg, ok, err := actBackup(ctx, eng, a); ok {
 		return msg, err
 	}
 	if a.Kind == "report" {
@@ -311,4 +315,56 @@ func actReceipts(ctx context.Context, eng *chat.Engine, chatID string, a ui.Acti
 		return "Railcar sends read receipts in this chat to those who ask", true, nil
 	}
 	return "Railcar doesn't send read receipts in this chat", true, nil
+}
+
+// actBackup runs the backup actions (§7.5), and reports whether a.Kind
+// was one of them.
+func actBackup(ctx context.Context, eng *chat.Engine, a ui.Action) (string, bool, error) {
+	switch a.Kind {
+	case "backup-on":
+		if err := eng.EnableBackup(ctx, a.Arg); err != nil {
+			return "", true, err
+		}
+		return "The backup is on, and this device writes it", true, nil
+	case "backup-now":
+		if err := eng.BackupNow(ctx); err != nil {
+			return "", true, err
+		}
+		return "The backup has everything", true, nil
+	case "backup-off":
+		if err := eng.DisableBackup(ctx); err != nil {
+			return "", true, err
+		}
+		return "The backup is off. Your passphrase no longer opens anything", true, nil
+	case "backup-status":
+		info, err := eng.Backup(ctx)
+		if err != nil {
+			return "", true, err
+		}
+		switch {
+		case !info.On:
+			return "The backup is off", true, nil
+		case info.This:
+			return fmt.Sprintf("The backup is on, and this device writes it: %d segments stored", info.Stored), true, nil
+		default:
+			return fmt.Sprintf("The backup is on, and another of your devices writes it: %d segments stored", info.Stored), true, nil
+		}
+	case "restore-backup":
+		if len(eng.Client().AccountKey()) != 16 && a.Arg == "" {
+			return "", true, ui.ErrPassphraseNeeded
+		}
+		res, err := eng.RestoreBackup(ctx, a.Arg)
+		if err != nil {
+			if errors.Is(err, client.ErrNoPassphraseWrap) {
+				return "", true, errors.New("that passphrase doesn't open the backup")
+			}
+			return "", true, err
+		}
+		msg := fmt.Sprintf("Restored %d messages. They show in their chats once this device is in them", res.Messages)
+		if res.Missing {
+			msg += ". Warning: your homeserver lost or withheld part of the backup"
+		}
+		return msg, true, nil
+	}
+	return "", false, nil
 }

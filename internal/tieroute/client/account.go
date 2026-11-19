@@ -22,6 +22,8 @@ type WrappedKey struct {
 	Via    string     `json:"via"`
 	CT     wire.Bytes `json:"ct"`               // nonce || AES-128-GCM output
 	Commit wire.Bytes `json:"commit,omitempty"` // for recovery wraps: the commitment to the code's recovery key 1
+	// Argon2 holds a passphrase wrap's salt and parameters (§7.5).
+	Argon2 *Argon2Params `json:"argon2,omitempty"`
 }
 
 // accountKeyAD is a wrapped key's associated data: JCS(["tieroute account

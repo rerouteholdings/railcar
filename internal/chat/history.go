@@ -112,7 +112,11 @@ func (e *Engine) keepHistory(ch *Chat, signed []byte, mkData []byte) {
 		}
 	}
 	l := e.histLog(ch.ID)
+	if slices.ContainsFunc(l, func(x histEntry) bool { return bytes.Equal(x.Msg.S, s.S) }) {
+		return // already kept, such as a message restored again
+	}
 	l = append(l, histEntry{Msg: s, MK: h, TS: am.TS})
+	e.keepForBackup(ch, s, h)
 	if len(l) > maxHistory {
 		l = l[len(l)-maxHistory:]
 	}

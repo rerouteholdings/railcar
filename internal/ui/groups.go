@@ -2,6 +2,7 @@ package ui
 
 import (
 	"context"
+	"errors"
 	"strings"
 
 	"charm.land/bubbles/v2/textinput"
@@ -247,6 +248,9 @@ func (m *mainView) handleGroupMsg(a *App, msg tea.Msg) (tea.Cmd, bool) {
 		m.notice = "Created."
 		return tea.Batch(cmds...), true
 	case actedMsg:
+		if errors.Is(msg.err, ErrPassphraseNeeded) {
+			return m.openPassphrase(a, "restore-backup"), true
+		}
 		if msg.err != nil {
 			m.notice = msg.err.Error()
 			return nil, true

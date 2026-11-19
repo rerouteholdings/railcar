@@ -197,6 +197,9 @@ type state struct {
 	// AskReceipts is whether this identity's messages ask for read
 	// receipts. It's off unless the user turns it on (§13.3).
 	AskReceipts bool `json:"ask_receipts,omitempty"`
+	// Backup is the message history backup, once this device turned it
+	// on (§7.5).
+	Backup *BackupState `json:"backup,omitempty"`
 }
 
 func loadState(p *store.Profile) (*state, error) {

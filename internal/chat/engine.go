@@ -227,6 +227,9 @@ func (e *Engine) Run(ctx context.Context) error {
 		select {
 		case <-tick.C:
 			e.retrySync(ctx)
+			e.mu.Lock()
+			e.maybeBackup(ctx)
+			e.mu.Unlock()
 			continue
 		case got, ok := <-events:
 			if !ok {
