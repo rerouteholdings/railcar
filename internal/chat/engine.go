@@ -85,6 +85,9 @@ type Engine struct {
 	st     *state
 	leaves map[string]bool // leaves whose msg-key checked out, by signature key and certificate
 	seen   map[string]bool // deliveries processed since start, by ID
+	// syncUntil is when the sync rule stops retrying; zero when it's done
+	// (§11.9).
+	syncUntil time.Time
 
 	evMu   sync.Mutex
 	events chan Event
@@ -187,7 +190,24 @@ func (e *Engine) Run(ctx context.Context) error {
 	if err := e.EnsureKeyPackages(ctx); err != nil {
 		e.log.Debug("chat: key packages", "err", err)
 	}
-	for ev := range e.c.Stream(ctx, client.StreamOptions{}) {
+	e.mu.Lock()
+	e.wantSync()
+	e.mu.Unlock()
+	events := e.c.Stream(ctx, client.StreamOptions{})
+	tick := time.NewTicker(syncEvery)
+	defer tick.Stop()
+	for {
+		var ev client.Event
+		select {
+		case <-tick.C:
+			e.retrySync(ctx)
+			continue
+		case got, ok := <-events:
+			if !ok {
+				return nil
+			}
+			ev = got
+		}
 		switch ev.Kind {
 		case client.EventConnected:
 			e.emit(Event{Kind: EventStream, Stream: ev.Kind})
@@ -204,7 +224,6 @@ func (e *Engine) Run(ctx context.Context) error {
 			return ev.Err
 		}
 	}
-	return nil
 }
 
 // Sync fetches and processes every inbox item waiting, without the
@@ -286,8 +305,12 @@ func (e *Engine) process(ctx context.Context, it *client.Item) error {
 		return e.notice(ctx, n)
 	}
 	d := it.Delivery
-	if d.Kind != "mls" {
-		return nil // link bundles come with linking devices, in a later phase
+	switch d.Kind {
+	case "link":
+		return e.linkBundle(ctx, d)
+	case "mls":
+	default:
+		return nil
 	}
 	switch d.MLS {
 	case "welcome":

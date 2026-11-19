@@ -131,11 +131,15 @@ func (e *Engine) notice(ctx context.Context, n *client.Notice) error {
 			if _, err := e.fetchChain(ctx, n.ID, true); err != nil {
 				return err
 			}
+			// Their devices may have changed: every shared chat follows
+			// (§11.9).
+			e.wantSync()
 		}
 	case client.NoticeChainAlert:
 		if _, err := e.c.FetchChain(ctx, e.c.ID(), client.FetchOptions{}); err != nil && !errors.Is(err, client.ErrDeviceRemoved) {
 			return retryable{err}
 		}
+		e.wantSync()
 	case client.NoticeDeliveryFailed:
 		e.deliveryFailed(n)
 	}

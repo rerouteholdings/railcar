@@ -57,6 +57,9 @@ type Chat struct {
 	// Pending is set while a commit can't be judged yet: nothing is sent
 	// until it's decided (§7.1).
 	Pending bool `json:"pending,omitempty"`
+	// Hold is set while a removed device still has a leaf here: nothing
+	// but the Remove is sent until it lands (§11.9).
+	Hold bool `json:"hold,omitempty"`
 
 	Unread       int    `json:"unread"`
 	LastActivity int64  `json:"last_activity"`
@@ -106,6 +109,9 @@ type Message struct {
 	AskedReceipt bool `json:"asked_receipt,omitempty"`
 	// ReadBy lists who sent a read receipt covering this message.
 	ReadBy []string `json:"read_by,omitempty"`
+	// System marks a line the client shows on its own, such as a new
+	// device in the chat (§11.9). It has no sender.
+	System bool `json:"system,omitempty"`
 }
 
 // state is the record that holds contacts and chats.
@@ -114,6 +120,9 @@ type state struct {
 	Chats    map[string]*Chat    `json:"chats"`
 	// Handles caches each identity's handle, from its chain.
 	Handles map[string]string `json:"handles"`
+	// Expected lists the chats a link bundle said this device would be
+	// added to (§7.2).
+	Expected []string `json:"expected,omitempty"`
 }
 
 func loadState(p *store.Profile) (*state, error) {

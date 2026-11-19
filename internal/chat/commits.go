@@ -238,8 +238,14 @@ func (e *Engine) processCommit(ctx context.Context, ch *Chat, b buffered) error 
 	if !after.Active {
 		ch.Stopped = "this device was removed from the chat"
 	}
+	if ch.Hold && !e.removalWaiting(after) {
+		ch.Hold = false
+	}
 	if err := e.save(); err != nil {
 		return err
+	}
+	if after.Active {
+		e.deviceLines(ch, before, after)
 	}
 	e.emit(Event{Kind: EventChat, Chat: ptr(ch.public())})
 	return nil
@@ -315,11 +321,32 @@ func (e *Engine) judgeCommit(ctx context.Context, ch *Chat, before *mls.State, p
 			return bad("the committer's new leaf names another device")
 		}
 	}
+	// Removes of another device's leaf: the commit has to bind a history
+	// of that identity in which the key isn't a device (§11.9). Nobody in
+	// a direct chat is an admin.
+	var removedKeys []keyCheck
+	for _, pr := range p.Commit.Proposals {
+		if pr.Kind != "remove" || pr.Removed == nil || *pr.Removed == p.Sender.Index {
+			continue
+		}
+		m, ok := before.Member(*pr.Removed)
+		if !ok {
+			return bad("a Remove of a leaf that isn't there")
+		}
+		id, dev, err := parseCredential(m.Identity)
+		if err != nil {
+			return bad("%v", err)
+		}
+		removedKeys = append(removedKeys, keyCheck{id, dev})
+	}
 	inScope := map[string]bool{}
 	for id := range adds {
 		inScope[id] = true
 	}
-	if len(adds) > 0 || next.Hub != old.Hub {
+	for _, k := range removedKeys {
+		inScope[k.id] = true
+	}
+	if len(adds) > 0 || len(removedKeys) > 0 || next.Hub != old.Hub {
 		inScope[committerID] = true
 		mustBe = append(mustBe, keyCheck{committerID, committerDev})
 	}
@@ -365,6 +392,17 @@ func (e *Engine) judgeCommit(ctx context.Context, ch *Chat, before *mls.State, p
 		c := bound[k.id]
 		if c == nil || !c.State.IsDevice(k.key) {
 			return bad("a key that isn't a device of %s in the history the commit binds", k.id)
+		}
+	}
+	for _, k := range removedKeys {
+		c := bound[k.id]
+		if c == nil || c.State.IsDevice(k.key) {
+			return bad("a Remove of a device that's still %s's in the history the commit binds", k.id)
+		}
+		if _, ok := old.Heads[k.id]; !ok {
+			if _, ever := devicePub(c, k.key, true); !ever {
+				return bad("a Remove of a key that was never %s's device", k.id)
+			}
 		}
 	}
 	// Leaves: every new or updated leaf's msg-key checks out.

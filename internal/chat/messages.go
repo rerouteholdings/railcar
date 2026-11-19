@@ -157,7 +157,7 @@ func (e *Engine) addMessage(ch *Chat, m Message) error {
 		return err
 	}
 	ch.LastActivity, ch.Preview = max(ch.LastActivity, m.Received), preview(m)
-	if m.From != e.c.ID() {
+	if m.From != e.c.ID() && !m.System {
 		ch.Unread++
 	}
 	if err := e.save(); err != nil {
@@ -353,6 +353,9 @@ func (e *Engine) sendable(chat string) (*Chat, error) {
 	case ch.Pending:
 		// Nothing goes out while a commit waits for a verdict (§7.1).
 		return nil, errors.New("chat: this chat is waiting on a change it can't check yet")
+	case ch.Hold:
+		// A removed device still has a leaf here (§11.9).
+		return nil, errors.New("chat: this chat is waiting for a removed device to be taken out")
 	}
 	return ch, nil
 }
