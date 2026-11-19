@@ -633,7 +633,11 @@ func (e *Engine) csend(ctx context.Context, cm *Community, g *CGroup, channel *u
 	r := res[0]
 	if r.Status != "sent" {
 		if r.Error == wire.CodeWrongHome {
-			e.stopCommunity(cm, "the community moved to another community server, which this version of Railcar doesn't follow yet")
+			// The community moved: the chain names where (§16.6).
+			if _, err := e.syncCommunityChain(ctx, cm, nil); err == nil && cm.MovingTo != "" {
+				e.followMove(ctx, cm)
+				return &r, errors.New("chat: the community moved to " + cm.MovingTo + ". Send it again")
+			}
 		}
 		return &r, &wire.Error{Code: r.Error, Msg: "the community server refused the message", Retry: r.Retry}
 	}

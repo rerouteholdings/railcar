@@ -73,6 +73,9 @@ type Community struct {
 	// Asking is set while this identity waits for a moderator to approve
 	// its request to join (§16.6).
 	Asking bool `json:"asking,omitempty"`
+	// MovingTo is the community server a set-home names, until this
+	// device follows the community there (§16.6).
+	MovingTo string `json:"moving_to,omitempty"`
 }
 
 // CGroup is one of a community's MLS groups.
@@ -263,6 +266,10 @@ func (e *Engine) syncCommunityChain(ctx context.Context, cm *Community, code []b
 		return false, err
 	}
 	e.refreshChannels(cm)
+	if to := c.State().Server; to != "" && to != cm.Server && cm.MovingTo != to {
+		e.communityMoved(cm, to)
+		e.followMove(ctx, cm)
+	}
 	return true, nil
 }
 
@@ -382,11 +389,23 @@ func (e *Engine) runCommunities(ctx context.Context) {
 func (e *Engine) startCommunity(ctx context.Context, server string) {
 	e.crunMu.Lock()
 	defer e.crunMu.Unlock()
-	if ctx == nil || e.cruns[server] {
+	if ctx == nil || e.cruns[server] != nil {
 		return
 	}
-	e.cruns[server] = true
-	go e.streamCommunity(ctx, server)
+	sctx, cancel := context.WithCancel(ctx)
+	e.cruns[server] = cancel
+	go e.streamCommunity(sctx, server)
+}
+
+// stopCommunityStream ends a community server's stream, such as the old
+// one's after a move.
+func (e *Engine) stopCommunityStream(server string) {
+	e.crunMu.Lock()
+	defer e.crunMu.Unlock()
+	if cancel := e.cruns[server]; cancel != nil {
+		cancel()
+		delete(e.cruns, server)
+	}
 }
 
 func (e *Engine) streamCommunity(ctx context.Context, server string) {
@@ -568,7 +587,11 @@ func (e *Engine) processCommunity(ctx context.Context, cm *Community, it *client
 	if err := e.cgroupItem(ctx, cm, g, b); err != nil {
 		return err
 	}
-	return e.cdrain(ctx, cm, g)
+	err = e.cdrain(ctx, cm, g)
+	if cm.MovingTo != "" && d.MLS == "commit" {
+		e.followMove(ctx, cm)
+	}
+	return err
 }
 
 // removedFromCommunity stops following a community this identity was

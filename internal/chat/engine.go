@@ -106,7 +106,7 @@ type Engine struct {
 	// live, from the chain tails groups bind, for GET chain's home.
 	homes  map[string]string
 	crunMu sync.Mutex
-	cruns  map[string]bool
+	cruns  map[string]context.CancelFunc
 
 	// ppl holds presence and public profiles (§13).
 	ppl people
@@ -143,7 +143,7 @@ func New(c *client.Client, opts Options) (*Engine, error) {
 		seen:     map[string]bool{},
 		fresh:    map[string]time.Time{},
 		cchains:  map[string]*community.Chain{},
-		cruns:    map[string]bool{},
+		cruns:    map[string]context.CancelFunc{},
 		joinCode: map[string][]byte{},
 		homes:    map[string]string{},
 		events:   make(chan Event, 256),

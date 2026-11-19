@@ -70,6 +70,7 @@ What it does:
 - History: reading segments with each history key until one opens them, checking every line, and verifying every message as imported history (§16.5, §7.3); uploading segments that start at the first number this device holds and never overlap a stored one; asking for missing numbers with `history-request`, and answering requests.
 - Roles, codes, and restricted channels: adding roles ranked just below this identity, assigning them, then adding the member to the restricted groups their roles see now and removing them from the others, with new keys for those groups. A restricted group requires `0xF0A1` and `0xF0A3` from creation on, and is pinned at its first commit when every leaf lists `0xF0A4`, which then adds `0xF0A4` to what it requires (§16.5).
 - Read positions: sent when a channel is read, and taken from the community server every 30 seconds when they're ahead (§16.4).
+- Following a community that moves (§16.6): a `set-home` in the chain, or `409 wrong-home` from the old community server, starts it. Railcar keeps reading the old server until the members group's hub is the new one, then signs in there, registers the members group first and then its other groups, leaves key packages, moves the channels' chats and history to the new server's name, and streams from there.
 - Moderation: timeouts, kicks, and bans, with Removes of the member's leaves in every group this device is in. After a kick or ban, an admin's Railcar rotates the community metadata key: one entry re-seals every role's name and color, and every name and topic of the channels everyone sees, under a new key, which then goes to the members group (§16.2.4). A moderator without `administrate` leaves that to an admin. Either way, the moderator's Railcar gives every text channel that keeps history a new history key, and each restricted group it's in a new metadata key, and sends each group its keys (§16.5).
 - Voice channels are listed with who's in them, from `voice-state`. Railcar can't join them.
 
@@ -113,7 +114,7 @@ for ev := range eng.Events() { ... }
 
 - Removing a contact, and blocking.
 - Offering re-creation on its own after 24 hours without the hub, or an hour of failed commits (§11.11): `:recreate` does it when the user asks.
-- Following a community's move, and re-creating a community's groups (§16.5, §16.6).
+- Moving a community as its owner, and re-creating a community's groups (§16.5, §16.6). A restricted group whose hub the owner doesn't hand over stays on the old community server.
 - The fork rule for community chains: Railcar follows the community server's chain, and stops at an entry it refuses.
 - Latching a group that hasn't latched when nothing else changes (§7.1). A device change latches it.
 - Communities in link bundles: Railcar sends none, and a linked device doesn't join the ones a bundle lists, so it joins each community again with a code (§7.2 step 5).
@@ -153,6 +154,7 @@ go test ./internal/chat -run E2E -v
 - `TestE2ERailcarGroups`: the same between Railcar identities, with the last admin leaving and admin passing to the longest-standing member.
 - `TestE2EInteropCommunities`: Reroute creates a community, and Railcar joins with a code, gets the keys, reads earlier messages from Reroute's history segment, and messages go both ways with sequence numbers. Railcar creates a community, and Reroute joins with a Railcar code, gets Railcar's keys, and reads Railcar's segment. Railcar adds a role and a restricted channel only it sees, and Reroute, given the role, reads it.
 - `TestE2EInteropApprovalJoins`: Reroute approves Railcar's request to join its community, and Railcar approves Reroute's into its own. A Railcar member checks the approval in each commit and keeps going. Then Railcar kicks a member, rotates the metadata key, and Reroute reads the names under the new one.
+- `TestE2EInteropCommunityMove`: Reroute's owner moves a community to another community server, and Railcar follows it, with its history, and messages go both ways there.
 - `TestE2ERailcarCommunities`: between Railcar identities, with a member who can't make codes, a late joiner reading history and reporting a message, a moderator's delete, read positions, a timeout, a kick that rotates the metadata key, and mentions and an `@everyone`, and typing in a channel.
 - `TestE2ERailcarReceipts`: two Railcar identities on the live stream. Nothing asks until the sender turns asking on; the reader is asked once, sends nothing before agreeing, and nothing after declining; receipts mark only the messages that asked. Reroute shows a message that asks.
 
