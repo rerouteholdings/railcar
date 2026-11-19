@@ -684,6 +684,26 @@ func (e *Engine) sendChannel(ctx context.Context, ch *Chat, content any) (uint64
 	return *r.Seq, nil
 }
 
+// sendChannelTyping sends a typing indicator to a text channel, as an
+// ephemeral delivery (§13.3). A member who can't write there sends none.
+func (e *Engine) sendChannelTyping(ctx context.Context, ch *Chat, content Typing) error {
+	cm, c, err := e.communityOf(ch.Community)
+	if err != nil {
+		return err
+	}
+	cch := c.State().Channels[ch.Channel]
+	if cch == nil || cch.Kind != "text" || !c.State().Writes(e.c.ID(), cch, e.c.Clock().Now().Unix()) {
+		return nil
+	}
+	g := e.groupFor(cm, cch)
+	if g == nil {
+		return nil
+	}
+	channel := ch.Channel
+	_, err = e.csend(ctx, cm, g, &channel, content, true)
+	return err
+}
+
 // noteSeq records the newest sequence number a channel has.
 func (e *Engine) noteSeq(ch *Chat, seq uint64) {
 	if seq > ch.NewestSeq {
@@ -776,6 +796,13 @@ func (e *Engine) applyChannel(ctx context.Context, cm *Community, g *CGroup, cha
 	}
 	if live && st.TimedOut(from, am.TS) {
 		return nil // a timed-out member's message that got through (§16.7)
+	}
+	if t == CTyping {
+		// Ephemeral: shown, and never kept in history (§13.3, §7.3).
+		if c, err := parseContent(t, am.C); err == nil && live {
+			e.emit(Event{Kind: EventTyping, ChatID: ch.ID, Who: from, On: *c.(Typing).On})
+		}
+		return nil
 	}
 	if seq > 0 {
 		e.logAdd(cm, channel, logEntry{Seq: seq, Msg: &signed, MsgKey: &mk, TS: am.TS})

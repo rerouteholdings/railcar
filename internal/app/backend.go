@@ -379,6 +379,14 @@ func (b *Backend) uiChat(eng *chat.Engine, c chat.Chat) ui.Chat {
 	if c.Kind == chat.KindChannel {
 		return channelChat(eng, c, out)
 	}
+	if c.ReadReceipts != nil {
+		out.ReadReceipts = "off"
+		if *c.ReadReceipts {
+			out.ReadReceipts = "on"
+		}
+	} else if c.ReceiptAsker != "" {
+		out.ReceiptAsk = ptr(member(eng, c.ReceiptAsker))
+	}
 	for _, id := range c.Members {
 		if id != me {
 			m := member(eng, id)
@@ -691,3 +699,5 @@ func friendly(err error) error {
 	}
 	return fmt.Errorf("%s", s)
 }
+
+func ptr[T any](v T) *T { return &v }

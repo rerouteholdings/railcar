@@ -184,7 +184,9 @@ func (d *DemoBackend) seed() {
 		{from: demoNoor, at: day(3, 20, 0), text: "Next month's pick is the history of the telephone exchange."},
 		{from: demoOskar, at: day(3, 20, 4), text: "The one with the switchboard photos? I'm in."},
 	})
-	add(Chat{ID: "noor", Kind: DirectChat, Title: demoNoor.Name, Members: []Member{demoNoor}}, 0, []line{
+	// Noor asked for read receipts, so opening the chat asks whether to
+	// send them (§13.3).
+	add(Chat{ID: "noor", Kind: DirectChat, Title: demoNoor.Name, Members: []Member{demoNoor}, ReceiptAsk: &demoNoor}, 0, []line{
 		{from: demoNoor, at: day(8, 12, 30), text: "Thanks for the invite code. I'm set up now."},
 	})
 

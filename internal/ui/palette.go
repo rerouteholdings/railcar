@@ -65,6 +65,7 @@ func newCommandPalette(a *App, m *mainView) *commandPalette {
 			withArg: func(a *App, path string) tea.Cmd { return a.main.act(a, "attach", path, "", false) }},
 		{label: "Save the latest attachments", names: []string{"save"}, run: func(a *App) tea.Cmd { return a.main.act(a, "save", "", "", false) },
 			withArg: func(a *App, dir string) tea.Cmd { return a.main.act(a, "save", dir, "", false) }},
+		argCommand("Ask for read receipts on your messages: on or off", "ask-receipts", "ask-receipts", "on or off", false),
 		{label: "Find a chat", names: []string{"find"}, run: func(a *App) tea.Cmd { return a.main.findChat(a) }},
 		{label: details, names: []string{"details", "info"}, run: func(a *App) tea.Cmd { a.main.toggleDetails(a); return nil }},
 		{label: "Reply to the last message", names: []string{"reply"}, run: func(a *App) tea.Cmd { return a.main.startReply(a) }},
@@ -87,6 +88,9 @@ func newCommandPalette(a *App, m *mainView) *commandPalette {
 	}, cmds...)
 	if c, ok := m.activeChat(); ok && c.Kind == GroupChat {
 		cmds = append(groupCommands(), cmds...)
+	}
+	if c, ok := m.activeChat(); ok && (c.Kind == GroupChat || c.Kind == DirectChat) {
+		cmds = append([]command{argCommand("Send read receipts in this chat: on or off", "receipts", "read-receipts", "on or off", false)}, cmds...)
 	}
 	if c, ok := m.activeChat(); ok && c.IsChannel() {
 		cmds = append(communityCommands(c), cmds...)

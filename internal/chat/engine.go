@@ -442,6 +442,11 @@ func (e *Engine) MarkRead(chat string) error {
 	if ok && c.Kind == KindChannel {
 		e.markChannelRead(context.Background(), c)
 	}
+	if ok && c.ReadReceipts != nil && *c.ReadReceipts {
+		if err := e.sendReceipt(context.Background(), c); err != nil {
+			e.log.Debug("chat: a read receipt", "err", err)
+		}
+	}
 	if !ok || c.Unread == 0 {
 		return nil
 	}

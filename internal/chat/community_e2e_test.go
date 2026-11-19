@@ -315,4 +315,37 @@ func TestE2ERailcarCommunities(t *testing.T) {
 	if !slices.Contains(ravi.bodies(gen.ID), "6:after the kick") {
 		t.Fatalf("ravi after the kick: %v", ravi.bodies(gen.ID))
 	}
+
+	// Typing in a channel reaches a member on the live stream, and isn't
+	// numbered or kept (§13.3).
+	rctx, cancel := context.WithCancel(ctx)
+	done := make(chan error, 1)
+	go func() { done <- ravi.e.Run(rctx) }()
+	defer func() { cancel(); <-done }()
+	got := false
+	for i := 0; i < 20 && !got; i++ {
+		if err := kat.e.SetTyping(ctx, gen.ID, true); err != nil {
+			t.Fatal(err)
+		}
+		timeout := time.After(time.Second)
+	wait:
+		for {
+			select {
+			case ev := <-ravi.e.Events():
+				if ev.Kind == EventTyping && ev.ChatID == gen.ID && ev.Who == kat.e.c.ID() && ev.On {
+					got = true
+					break wait
+				}
+			case <-timeout:
+				break wait
+			}
+		}
+	}
+	if !got {
+		t.Fatal("Kat's typing never reached Ravi")
+	}
+	if _, err := kat.e.SendText(ctx, gen.ID, "after typing", ""); err != nil {
+		t.Fatal(err)
+	}
+	until(t, "ravi gets the message after typing", func() bool { return slices.Contains(ravi.bodies(gen.ID), "7:after typing") })
 }

@@ -78,6 +78,17 @@ func (d *DemoBackend) Act(_ context.Context, chat string, a Action) (string, err
 		return d.actFiles(c, a)
 	}
 	switch a.Kind {
+	case "ask-receipts":
+		return "Your messages ask for read receipts now", nil
+	case "read-receipts":
+		if c == nil {
+			return "", errors.New("Open a chat first")
+		}
+		c.ReceiptAsk, c.ReadReceipts = nil, a.Arg
+		d.emit(ChatChanged{*c})
+		return "Done", nil
+	}
+	switch a.Kind {
 	case "create-community", "join-community":
 		return "", errors.New("The demo has one community. Communities need a community server")
 	}

@@ -44,6 +44,7 @@ const (
 	overlayDevices
 	overlayNewGroup
 	overlayAttach
+	overlayReceipts
 )
 
 // narrowWidth is the width under which the main view shows one pane at a
@@ -99,9 +100,9 @@ type mainView struct {
 	// picker is the file picker for sending a file to pickChat.
 	picker   filepicker.Model
 	pickChat string
-	palette       *commandPalette
-	notice        string
-	layout        layout
+	palette  *commandPalette
+	notice   string
+	layout   layout
 
 	// The add-contact box, and the invite code being shown.
 	addInput   textinput.Model
@@ -124,6 +125,10 @@ type mainView struct {
 	typingSent time.Time
 	typingSeq  int
 
+	// receiptAsked holds the chats whose read receipt question this run
+	// showed, so it shows once (§13.3).
+	receiptAsked map[string]bool
+
 	// follow is the handle of a contact request that was open when it left
 	// the list. Their direct chat opens when it arrives.
 	follow string
@@ -143,8 +148,10 @@ func newMainView(a *App) *mainView {
 		loaded:   map[string]bool{},
 		drafts:   map[string]string{},
 		typing:   map[string]map[string]typist{},
-		folded:   map[string]bool{},
-		help:     help.New(),
+
+		receiptAsked: map[string]bool{},
+		folded:       map[string]bool{},
+		help:         help.New(),
 	}
 	m.vp = viewport.New()
 	m.vp.MouseWheelEnabled = false
@@ -465,6 +472,7 @@ func (m *mainView) openChat(a *App, id string, toComposer bool) tea.Cmd {
 	if c, ok := m.activeChat(); ok && c.IsRequest() {
 		toComposer = false
 	}
+	m.askReceipts()
 	if toComposer {
 		m.narrowDetails = false
 		cmds = append(cmds, m.setFocus(a, focusComposer))
@@ -625,6 +633,7 @@ func (m *mainView) handleEvent(a *App, e Event) tea.Cmd {
 			cmds = append(cmds, m.openChat(a, c.ID, m.focus != focusChats))
 		}
 		if c.ID == m.active {
+			m.askReceipts()
 			m.updatePlaceholder()
 			if c.IsRequest() && m.focus == focusComposer {
 				cmds = append(cmds, m.setFocus(a, focusMessages))
@@ -843,6 +852,8 @@ func (m *mainView) keyPress(a *App, msg tea.KeyPressMsg) tea.Cmd {
 			m.overlay = overlayNone
 		}
 		return nil
+	case overlayReceipts:
+		return m.receiptsKey(a, msg)
 	case overlaySignOut:
 		switch msg.String() {
 		case "enter", "y":
@@ -1096,6 +1107,8 @@ func (m *mainView) view(a *App) string {
 		return overlayOn(screen, t.overlay.Render(fit(content, w, lipgloss.Height(content))), a.width, a.height)
 	case overlaySignOut:
 		return overlayOn(screen, m.signOutView(a), a.width, a.height)
+	case overlayReceipts:
+		return overlayOn(screen, m.receiptsView(a), a.width, a.height)
 	case overlayAddContact:
 		return overlayOn(screen, m.addContactView(a), a.width, a.height)
 	case overlayAttach:

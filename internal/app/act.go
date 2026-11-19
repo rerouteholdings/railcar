@@ -122,6 +122,9 @@ func act(ctx context.Context, eng *chat.Engine, chatID string, a ui.Action) (str
 	if msg, ok, err := actFiles(ctx, eng, chatID, a); ok {
 		return msg, err
 	}
+	if msg, ok, err := actReceipts(ctx, eng, chatID, a); ok {
+		return msg, err
+	}
 	c, _ := eng.Chat(chatID)
 	server := c.Community
 	who := func() (string, error) {
@@ -267,4 +270,39 @@ func act(ctx context.Context, eng *chat.Engine, chatID string, a ui.Action) (str
 		return "You left the community", eng.LeaveCommunity(ctx, server)
 	}
 	return "", fmt.Errorf("Railcar doesn't know the action %q", a.Kind)
+}
+
+// actReceipts runs the read receipt actions (§13.3), and reports whether
+// a.Kind was one of them.
+func actReceipts(ctx context.Context, eng *chat.Engine, chatID string, a ui.Action) (string, bool, error) {
+	if a.Kind != "read-receipts" && a.Kind != "ask-receipts" {
+		return "", false, nil
+	}
+	var on bool
+	switch strings.ToLower(strings.TrimSpace(a.Arg)) {
+	case "on", "yes":
+		on = true
+	case "off", "no":
+	default:
+		return "", true, errors.New("type on or off")
+	}
+	if a.Kind == "ask-receipts" {
+		if err := eng.SetAskReceipts(on); err != nil {
+			return "", true, err
+		}
+		if on {
+			return "Your messages ask for read receipts now", true, nil
+		}
+		return "Your messages don't ask for read receipts now", true, nil
+	}
+	if chatID == "" {
+		return "", true, errors.New("open a chat first")
+	}
+	if err := eng.SetReadReceipts(ctx, chatID, on); err != nil {
+		return "", true, err
+	}
+	if on {
+		return "Railcar sends read receipts in this chat to those who ask", true, nil
+	}
+	return "Railcar doesn't send read receipts in this chat", true, nil
 }

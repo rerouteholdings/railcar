@@ -150,3 +150,24 @@ func TestTypingShows(t *testing.T) {
 		t.Fatal("the typing indicator stayed")
 	}
 }
+
+func TestReadReceiptQuestion(t *testing.T) {
+	a, b := started(t, 120, 40)
+	drive(a, b, a.main.openChat(a, "noor", false))
+	if a.main.overlay != overlayReceipts || !strings.Contains(plain(a), "Send read receipts to Noor") {
+		t.Fatalf("the question didn't show:\n%s", plain(a))
+	}
+	send(a, b, tea.KeyPressMsg{Code: 'y', Text: "y"})
+	if a.main.overlay != overlayNone {
+		t.Fatal("the question stayed")
+	}
+	if c, _ := a.main.activeChat(); c.ReceiptAsk != nil || c.ReadReceipts != "on" {
+		t.Fatalf("after answering: %+v", c)
+	}
+	// It's asked once.
+	drive(a, b, a.main.openChat(a, "ravi", false))
+	drive(a, b, a.main.openChat(a, "noor", false))
+	if a.main.overlay != overlayNone {
+		t.Fatal("the question came back")
+	}
+}

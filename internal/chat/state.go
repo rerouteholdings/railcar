@@ -93,6 +93,12 @@ type Chat struct {
 	// ReadReceipts is whether the user agreed to send read receipts in
 	// this chat (§13.3); nil means they haven't been asked.
 	ReadReceipts *bool `json:"read_receipts,omitempty"`
+	// ReceiptUpto is the newest message this device sent a read receipt
+	// for.
+	ReceiptUpto string `json:"receipt_upto,omitempty"`
+	// ReceiptAsker is who asked for a read receipt first, while the user
+	// hasn't decided; the interface asks the user then (§13.3).
+	ReceiptAsker string `json:"receipt_asker,omitempty"`
 }
 
 // AddPending is an add-request no admin has answered yet (§11.8).
@@ -188,6 +194,9 @@ type state struct {
 	// Communities are the communities this identity is in, by community
 	// server name (§16).
 	Communities map[string]*Community `json:"communities,omitempty"`
+	// AskReceipts is whether this identity's messages ask for read
+	// receipts. It's off unless the user turns it on (§13.3).
+	AskReceipts bool `json:"ask_receipts,omitempty"`
 }
 
 func loadState(p *store.Profile) (*state, error) {

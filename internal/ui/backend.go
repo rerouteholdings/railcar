@@ -181,6 +181,9 @@ type Backend interface {
 //     auto-away (Arg: on or off).
 //   - Files (§14): attach (Arg: a path), and save (Arg: a folder, or
 //     empty for the default), which saves the latest attachments.
+//   - Read receipts (§13.3): read-receipts, whether to send them in the
+//     open chat, and ask-receipts, whether your messages ask for them
+//     (Arg: on or off).
 type Action struct {
 	Kind string
 	Arg  string
@@ -374,6 +377,11 @@ type Chat struct {
 	Order           int
 	// InVoice lists who's in a voice channel.
 	InVoice []Member
+	// ReceiptAsk is who first asked for read receipts in a direct chat or
+	// group chat, while the user hasn't said whether to send them; nil
+	// otherwise. ReadReceipts is "on" or "off" once they have (§13.3).
+	ReceiptAsk   *Member
+	ReadReceipts string
 }
 
 // IsRequest reports whether the entry is a contact request, not a chat.

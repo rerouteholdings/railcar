@@ -161,6 +161,9 @@ func (e *Engine) addMessage(ch *Chat, m Message) error {
 	if m.From != e.c.ID() && !m.System {
 		ch.Unread++
 	}
+	if m.AskedReceipt && m.From != e.c.ID() && ch.Kind != KindChannel && ch.ReadReceipts == nil && ch.ReceiptAsker == "" {
+		ch.ReceiptAsker = m.From
+	}
 	if err := e.save(); err != nil {
 		return err
 	}
@@ -198,8 +201,12 @@ func (e *Engine) changeMessage(ch *Chat, id string, f func(*Message) error) erro
 }
 
 // receipt marks every message up to upto that asked for a receipt as read
-// by from (§13.3).
+// by from (§13.3). A receipt from another of this identity's devices
+// marks nothing: it went to the other members.
 func (e *Engine) receipt(ch *Chat, from, upto string) error {
+	if from == e.c.ID() {
+		return nil
+	}
 	msgs, err := e.messages(ch.ID)
 	if err != nil {
 		return err
@@ -254,11 +261,12 @@ func (e *Engine) SendText(ctx context.Context, chat, body, reply string) (Messag
 		return Message{}, err
 	}
 	now := e.c.Clock().Now().Unix()
-	m := Message{ID: newMsgID(), From: e.c.ID(), TS: now, Received: now, Body: body, Reply: reply, Status: Sending}
+	ask := e.st.AskReceipts && ch.Kind != KindChannel
+	m := Message{ID: newMsgID(), From: e.c.ID(), TS: now, Received: now, Body: body, Reply: reply, Status: Sending, AskedReceipt: ask}
 	if err := e.addMessage(ch, m); err != nil {
 		return Message{}, err
 	}
-	c := Text{T: CText, ID: m.ID, TS: now, Body: &body, Reply: reply}
+	c := Text{T: CText, ID: m.ID, TS: now, Body: &body, Reply: reply, Receipt: ask}
 	if ch.Kind == KindChannel {
 		if strings.Contains(" "+body+" ", " @everyone ") {
 			c.Everyone = true
@@ -358,10 +366,11 @@ func (e *Engine) SetTyping(ctx context.Context, chat string, on bool) error {
 	if err != nil {
 		return err
 	}
+	c := Typing{T: CTyping, TS: e.c.Clock().Now().Unix(), On: &on}
 	if ch.Kind == KindChannel {
-		return nil // typing in channels comes in a later version
+		return e.sendChannelTyping(ctx, ch, c)
 	}
-	return e.sendContent(ctx, ch, Typing{T: CTyping, TS: e.c.Clock().Now().Unix(), On: &on}, true)
+	return e.sendContent(ctx, ch, c, true)
 }
 
 // sendable returns a chat this device may send to now.

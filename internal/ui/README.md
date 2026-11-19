@@ -37,6 +37,7 @@ go run ./cmd/railcar --demo
    - `:presence away Back at 3` sets the presence state, one of available, online, away, busy, or offline, and optionally a status message; `:status` alone sets or clears the status message (§13.2). After 10 minutes without a key or a click, Railcar sets an available or online identity away, and back at the next key.
    - `:name`, `:bio`, `:links`, and `:avatar` change the public profile, which anyone can see (§13.1). `:avatar` takes the path to a PNG, JPEG, WebP, or GIF of at most 1 MB, or `none`. `:profile` shows it.
    - Ctrl+A, or `:attach`, opens **Send a file**, a file picker that starts in the home folder; `:attach ~/Pictures/map.png` sends a file by its path (§14). Messages show their files with a name, a size, and an image's size in pixels when Railcar has its bytes; audio files show as voice messages, since a terminal can't play them. `:save` downloads the latest message's files to the Downloads folder, or `:save ~/somewhere` to another one. A file past its 30 days shows "This file has expired".
+   - Read receipts (§13.3): `:ask-receipts on` makes your messages ask for them; it's off until you turn it on. The first time someone asks in a chat, **Send read receipts to Kat?** opens: y sends them in that chat, n doesn't, and Esc asks again the next time Railcar starts. `:receipts on` or `:receipts off` changes the answer later. Your messages show when they've been read.
    - `:reply`, `:edit`, `:delete`, and `:react` act on the latest message: someone else's for replying and reacting, the identity's own for editing and deleting. `:react 🎉` picks the emoji; it's 👍 otherwise, and reacting again with the same emoji takes it back.
 
 The mouse works too: click a chat to open it, click a pane to move to it, and scroll the messages or the chat list.
@@ -98,7 +99,7 @@ The interface reaches the protocol only through `Backend`, in `backend.go`. It c
 | `AcceptRequest`, `DeclineRequest` | Answer a contact request; accepting starts the direct chat |
 | `Contacts` | Lists the contacts, for choosing who goes in a group chat |
 | `CreateGroup` | Creates a group chat with some contacts, by handle |
-| `Act` | Runs an `Action` on a group chat or a community, such as `add-member`, `join-community`, or `kick`, and returns a line to show |
+| `Act` | Runs an `Action`, such as `add-member`, `join-community`, `kick`, or `read-receipts`, and returns a line to show |
 | `SignOut` | Removes the identity from this device |
 | `Close` | Stops the stream and closes `Events` |
 
