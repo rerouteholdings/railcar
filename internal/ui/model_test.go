@@ -418,7 +418,7 @@ func TestRecover(t *testing.T) {
 	a, b := newTestApp(t, true)
 	a.Update(tea.WindowSizeMsg{Width: 100, Height: 30})
 	drive(a, b, a.Init())
-	send(a, b, tea.KeyPressMsg{Code: tea.KeyDown}, tea.KeyPressMsg{Code: tea.KeyEnter})
+	send(a, b, tea.KeyPressMsg{Code: tea.KeyDown}, tea.KeyPressMsg{Code: tea.KeyDown}, tea.KeyPressMsg{Code: tea.KeyEnter})
 	if a.onboarding.step != stepRecover {
 		t.Fatalf("step = %v", a.onboarding.step)
 	}
@@ -521,5 +521,160 @@ func TestNoColorUsesShapes(t *testing.T) {
 	th := newTheme(true, true)
 	if th.paneFocused.GetBorderStyle() == th.pane.GetBorderStyle() {
 		t.Error("without color, the focused pane looks like the others")
+	}
+}
+
+func TestSignInWithLinkCode(t *testing.T) {
+	a, b := newTestApp(t, true)
+	a.Update(tea.WindowSizeMsg{Width: 100, Height: 60})
+	drive(a, b, a.Init())
+	send(a, b, tea.KeyPressMsg{Code: tea.KeyDown}, tea.KeyPressMsg{Code: tea.KeyEnter})
+	if a.onboarding.step != stepLinkHow {
+		t.Fatalf("step = %v", a.onboarding.step)
+	}
+	send(a, b, tea.KeyPressMsg{Code: tea.KeyEnter})
+	send(a, b, typeText("kat.chat.example.com")...)
+	send(a, b, tea.KeyPressMsg{Code: tea.KeyEnter})
+	send(a, b, typeText("chat.example.com")...)
+	send(a, b, tea.KeyPressMsg{Code: tea.KeyEnter})
+	o := a.onboarding
+	if o.step != stepLinkCode {
+		t.Fatalf("step = %v", o.step)
+	}
+	screen := plain(a)
+	for _, want := range []string{"link-", "@chat.example.com", "Confirmation code", "Never read it to anyone", "█"} {
+		if !strings.Contains(screen, want) {
+			t.Errorf("the link code screen doesn't show %q", want)
+		}
+	}
+	send(a, b, typeText("7k2m-9qx")...)
+	send(a, b, tea.KeyPressMsg{Code: tea.KeyEnter})
+	if !strings.Contains(plain(a), "8 letters and digits") {
+		t.Error("a short confirmation code was taken")
+	}
+	send(a, b, typeText("d")...)
+	send(a, b, tea.KeyPressMsg{Code: tea.KeyEnter})
+	if o.step != stepLinkWait {
+		t.Fatalf("step = %v", o.step)
+	}
+	send(a, b, linkTickMsg{o.linkGen})
+	if a.screen != screenMain || a.identity.Handle != "kat.chat.example.com" {
+		t.Fatalf("screen = %v, identity = %+v", a.screen, a.identity)
+	}
+}
+
+func TestSignInWithApprovalCode(t *testing.T) {
+	a, b := newTestApp(t, true)
+	a.Update(tea.WindowSizeMsg{Width: 100, Height: 30})
+	drive(a, b, a.Init())
+	send(a, b, tea.KeyPressMsg{Code: tea.KeyDown}, tea.KeyPressMsg{Code: tea.KeyEnter})
+	send(a, b, tea.KeyPressMsg{Code: tea.KeyDown}, tea.KeyPressMsg{Code: tea.KeyEnter})
+	if a.onboarding.step != stepLinkEnter {
+		t.Fatalf("step = %v", a.onboarding.step)
+	}
+	send(a, b, typeText("approve-ljnf-uws2-ljnf-uws2-ljnf-uws2-li@ravi.example.org@chat.example.org")...)
+	send(a, b, tea.KeyPressMsg{Code: tea.KeyEnter})
+	o := a.onboarding
+	if o.step != stepLinkWait || !strings.Contains(plain(a), "Waiting for the other device") {
+		t.Fatalf("step = %v", o.step)
+	}
+	// Esc gives up and goes back.
+	send(a, b, tea.KeyPressMsg{Code: tea.KeyEscape})
+	if o.step != stepLinkHow {
+		t.Fatalf("step = %v", o.step)
+	}
+	send(a, b, tea.KeyPressMsg{Code: tea.KeyDown}, tea.KeyPressMsg{Code: tea.KeyEnter})
+	send(a, b, typeText("approve-ljnf-uws2-ljnf-uws2-ljnf-uws2-li@ravi.example.org@chat.example.org")...)
+	send(a, b, tea.KeyPressMsg{Code: tea.KeyEnter})
+	send(a, b, linkTickMsg{o.linkGen})
+	if a.screen != screenMain || a.identity.Handle != "ravi.example.org" {
+		t.Fatalf("screen = %v, identity = %+v", a.screen, a.identity)
+	}
+}
+
+func TestAddDevice(t *testing.T) {
+	a, b := started(t, 120, 40)
+	send(a, b, tea.KeyPressMsg{Code: tea.KeyEscape})
+	send(a, b, tea.KeyPressMsg{Code: ':', Text: ":"})
+	send(a, b, typeText("add-device link-aif5-ij2e@chat.example.com")...)
+	send(a, b, tea.KeyPressMsg{Code: tea.KeyEnter})
+	if a.main.overlay != overlayAddDevice || !strings.Contains(plain(a), "Only enter a code shown") {
+		t.Fatalf("overlay = %v", a.main.overlay)
+	}
+	send(a, b, tea.KeyPressMsg{Code: tea.KeyTab})
+	send(a, b, typeText("Kat's tablet")...)
+	send(a, b, tea.KeyPressMsg{Code: tea.KeyEnter})
+	screen := plain(a)
+	for _, want := range []string{"7K2M-9QXD", "Only continue if you're", "Never read it"} {
+		if !strings.Contains(screen, want) {
+			t.Errorf("the confirmation step doesn't show %q", want)
+		}
+	}
+	send(a, b, approvalTickMsg{a.main.dev.gen})
+	if a.main.overlay != overlayNone || !strings.Contains(a.main.notice, "Kat's tablet") {
+		t.Fatalf("overlay = %v, notice = %q", a.main.overlay, a.main.notice)
+	}
+
+	// The device list has it, and removes it.
+	send(a, b, tea.KeyPressMsg{Code: ':', Text: ":"})
+	send(a, b, typeText("devices")...)
+	send(a, b, tea.KeyPressMsg{Code: tea.KeyEnter})
+	if a.main.overlay != overlayDevices || !strings.Contains(plain(a), "Kat's tablet") || !strings.Contains(plain(a), "(this device)") {
+		t.Fatalf("the device list: %s", plain(a))
+	}
+	send(a, b, tea.KeyPressMsg{Code: 'd', Text: "d"})
+	if a.main.dev.removing {
+		t.Error("the list offered to remove this device")
+	}
+	send(a, b, tea.KeyPressMsg{Code: tea.KeyDown}, tea.KeyPressMsg{Code: tea.KeyDown}, tea.KeyPressMsg{Code: 'd', Text: "d"})
+	if !strings.Contains(plain(a), "Remove Kat's tablet?") {
+		t.Fatal("no question before removing")
+	}
+	send(a, b, tea.KeyPressMsg{Code: tea.KeyEnter})
+	if strings.Contains(plain(a), "Kat's tablet") {
+		t.Error("the device is still listed")
+	}
+}
+
+func TestShowApprovalCode(t *testing.T) {
+	a, b := started(t, 120, 50)
+	send(a, b, tea.KeyPressMsg{Code: tea.KeyEscape})
+	send(a, b, tea.KeyPressMsg{Code: ':', Text: ":"})
+	send(a, b, typeText("approval-code")...)
+	send(a, b, tea.KeyPressMsg{Code: tea.KeyEnter})
+	if a.main.overlay != overlayApprovalCode || strings.Contains(plain(a), "approve-") {
+		t.Fatal("the code showed before the warning")
+	}
+	if !strings.Contains(plain(a), "Only continue if you're") {
+		t.Error("no warning")
+	}
+	send(a, b, tea.KeyPressMsg{Code: tea.KeyEnter})
+	if !strings.Contains(plain(a), "approve-ljnf") || !strings.Contains(plain(a), "█") {
+		t.Fatalf("no code: %s", plain(a))
+	}
+	send(a, b, approvalTickMsg{a.main.dev.gen})
+	if a.main.overlay != overlayNone || !strings.Contains(a.main.notice, "New device") {
+		t.Fatalf("overlay = %v, notice = %q", a.main.overlay, a.main.notice)
+	}
+}
+
+func TestQRCodeShape(t *testing.T) {
+	for _, dark := range []bool{true, false} {
+		q := renderQR(demoLink, dark)
+		lines := strings.Split(q, "\n")
+		cols, rows := qrSize(demoLink)
+		if len(lines) != rows {
+			t.Fatalf("%d rows, want %d", len(lines), rows)
+		}
+		for _, l := range lines {
+			if n := len([]rune(l)); n != cols {
+				t.Fatalf("a row of %d, want %d", n, cols)
+			}
+		}
+		// The quiet zone is light: drawn on a dark terminal, blank on a
+		// light one.
+		if first := []rune(lines[0])[0]; (first != ' ') != dark {
+			t.Errorf("dark=%v: the corner is %q", dark, first)
+		}
 	}
 }

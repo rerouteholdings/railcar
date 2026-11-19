@@ -181,6 +181,9 @@ func (a *App) needsSpinner() bool {
 		return true
 	}
 	if a.screen == screenMain {
+		if m := a.main; m != nil && (m.overlay == overlayAddDevice || m.overlay == overlayApprovalCode) && m.dev.step == 1 {
+			return true
+		}
 		return a.stream == StreamConnecting || a.stream == StreamReconnecting
 	}
 	return a.screen == screenLoading

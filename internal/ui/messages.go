@@ -36,7 +36,15 @@ func renderMessages(t *theme, msgs []Message, width int, now time.Time, loc *tim
 			}
 			b.WriteString(daySeparator(t, dayLabel(sent, now, loc), width) + "\n")
 		}
-		newGroup := newDay || prev.Sender.Handle != m.Sender.Handle || m.Sent.Sub(prev.Sent) > groupGap
+		if m.System {
+			if !newDay {
+				b.WriteString("\n")
+			}
+			b.WriteString(systemLine(t, m.Text, width) + "\n")
+			prev = &msgs[i]
+			continue
+		}
+		newGroup := newDay || prev.System || prev.Sender.Handle != m.Sender.Handle || m.Sent.Sub(prev.Sent) > groupGap
 		if newGroup {
 			if !newDay {
 				b.WriteString("\n")
@@ -110,6 +118,13 @@ func messageBody(t *theme, m Message, width int) string {
 		lines = append(lines, "  "+strings.Join(rs, "  "))
 	}
 	return strings.Join(lines, "\n")
+}
+
+// systemLine centers a line Railcar shows on its own.
+func systemLine(t *theme, text string, width int) string {
+	text = ansi.Truncate(text, max(4, width-2), "…")
+	pad := max(0, (width-lipgloss.Width(text))/2)
+	return strings.Repeat(" ", pad) + t.dim.Render(text)
 }
 
 // replyLine names the message being answered, with a short quote.

@@ -22,11 +22,17 @@ const (
 	stepWords
 	stepConfirm
 	stepBusy
+	stepLinkHow
+	stepLinkForm
+	stepLinkCode
+	stepLinkEnter
+	stepLinkWait
 )
 
 // onboarding signs in to an existing identity or creates one. Creating one
 // ends by showing the 12 recovery words and asking for 3 of them back, as
-// §6.1 asks of clients.
+// §6.1 asks of clients. Signing in with another device shows a link code,
+// or takes an approval code, and waits for the other device (§7.2).
 type onboarding struct {
 	step onboardStep
 	form *huh.Form
@@ -44,6 +50,16 @@ type onboarding struct {
 	code       string
 	recHandle  string
 	recWords   string
+
+	// Signing in with another device: which way round, the identity, the
+	// link code shown, the codes typed, and which link a poll is for.
+	linkHow    string
+	linkHandle string
+	linkServer string
+	linkCode   string
+	confirm    string
+	approval   string
+	linkGen    int
 
 	identity  Identity
 	words     []string
@@ -77,7 +93,7 @@ func newOnboarding(a *App, note string) *onboarding {
 
 func (o *onboarding) init(*App) tea.Cmd { return o.form.Init() }
 
-func (o *onboarding) busy() bool { return o.step == stepBusy }
+func (o *onboarding) busy() bool { return o.step == stepBusy || o.step == stepLinkWait }
 
 // applyTheme rebuilds the current form with the new theme.
 func (o *onboarding) applyTheme(a *App) {
@@ -118,6 +134,7 @@ func (o *onboarding) toWelcome(a *App) {
 			Description("Railcar is a terminal client for Tieroute, a federated, end-to-end encrypted chat protocol.\nWhat would you like to do?").
 			Options(
 				huh.NewOption("Create an identity", "create"),
+				huh.NewOption("Sign in with another device", "link"),
 				huh.NewOption("Sign in with your recovery code", "recover"),
 			).
 			Value(&o.choice),
@@ -222,15 +239,25 @@ func (o *onboarding) update(a *App, msg tea.Msg) tea.Cmd {
 	case tea.KeyPressMsg:
 		if msg.String() == "esc" {
 			switch o.step {
-			case stepCreate, stepRecover:
+			case stepCreate, stepRecover, stepLinkHow:
 				o.err = ""
 				o.toWelcome(a)
+				return o.form.Init()
+			case stepLinkForm, stepLinkEnter, stepLinkCode, stepLinkWait:
+				if o.step == stepLinkCode || o.step == stepLinkWait {
+					o.leaveLink(a)
+				}
+				o.err = ""
+				o.toLinkHow(a)
 				return o.form.Init()
 			case stepConfirm:
 				o.toWords(a)
 				return o.form.Init()
 			}
 		}
+	case linkStartedMsg, linkConfirmedMsg, linkTickMsg, linkedMsg:
+		cmd, _ := o.linkUpdate(a, msg)
+		return cmd
 	case signedUpMsg:
 		if msg.err != nil {
 			o.err = sentence(msg.err)
@@ -292,12 +319,41 @@ func (o *onboarding) submit(a *App) tea.Cmd {
 	o.err = ""
 	switch o.step {
 	case stepWelcome:
-		if o.choice == "recover" {
+		switch o.choice {
+		case "recover":
 			o.toRecover(a)
-		} else {
+		case "link":
+			o.toLinkHow(a)
+		default:
 			o.toCreate(a)
 		}
 		return o.form.Init()
+	case stepLinkHow:
+		if o.linkHow == "enter" {
+			o.toLinkEnter(a)
+		} else {
+			o.toLinkForm(a)
+		}
+		return o.form.Init()
+	case stepLinkForm:
+		req := LinkRequest{Handle: normalizeHandle(o.linkHandle), Homeserver: normalizeHomeserver(o.linkServer)}
+		o.toBusy("Getting a code from " + req.Homeserver)
+		return tea.Batch(a.startSpinner(), call(func(ctx context.Context) tea.Msg {
+			code, err := a.b.StartLink(ctx, req)
+			return linkStartedMsg{code, err}
+		}))
+	case stepLinkEnter:
+		code := strings.TrimSpace(o.approval)
+		o.toBusy("Leaving this device's key with your homeserver")
+		return tea.Batch(a.startSpinner(), call(func(ctx context.Context) tea.Msg {
+			return linkStartedMsg{err: a.b.StartLinkWithCode(ctx, code)}
+		}))
+	case stepLinkCode:
+		code := strings.TrimSpace(o.confirm)
+		o.form = nil
+		return call(func(ctx context.Context) tea.Msg {
+			return linkConfirmedMsg{a.b.ConfirmLink(ctx, code)}
+		})
 	case stepCreate:
 		req := SignUpRequest{
 			Homeserver:       normalizeHomeserver(o.homeserver),
@@ -340,8 +396,14 @@ func (o *onboarding) view(a *App) string {
 		b.WriteString(t.danger.Width(w).Render("! "+o.err) + "\n\n")
 	}
 	switch o.step {
-	case stepBusy:
+	case stepBusy, stepLinkWait:
 		b.WriteString(a.spinner.View() + " " + t.muted.Render(o.busyText))
+	case stepLinkCode:
+		if o.form == nil {
+			b.WriteString(a.spinner.View() + " " + t.muted.Render("Sending the confirmation code"))
+		} else {
+			b.WriteString(o.linkCodeView(a, w))
+		}
 	case stepWords:
 		b.WriteString(o.wordsView(t, w) + "\n\n")
 		b.WriteString(o.form.View())

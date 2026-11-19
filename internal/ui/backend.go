@@ -34,6 +34,28 @@ type Backend interface {
 	// handle and recovery code (§6.1).
 	Recover(ctx context.Context, handle string, words []string) (Identity, error)
 
+	// StartLink starts signing in to an existing identity with another
+	// device's help (§7.2): this device makes its keys, leaves its key on
+	// the homeserver, and returns the link code to show as a QR code and as
+	// text. The other device approves it.
+	StartLink(ctx context.Context, req LinkRequest) (string, error)
+
+	// StartLinkWithCode starts signing in with an approval code that
+	// another device shows (§7.2.1). There's no confirmation code to type.
+	StartLinkWithCode(ctx context.Context, code string) error
+
+	// ConfirmLink sends the confirmation code the other device shows back
+	// to it (§7.2 step 2).
+	ConfirmLink(ctx context.Context, code string) error
+
+	// FinishLink tries to sign in once the other device has added this
+	// one. It returns ErrNotLinkedYet until then; the interface calls it
+	// again every couple of seconds.
+	FinishLink(ctx context.Context) (Identity, error)
+
+	// CancelLink gives up on signing in with another device.
+	CancelLink()
+
 	// Connect starts the live stream and keeps it open, reconnecting on its
 	// own. It returns once the first attempt has started. Every change of
 	// state arrives as a StreamChanged event.
@@ -91,6 +113,33 @@ type Backend interface {
 	// ContactRequest chat. The requester is told (§9.3).
 	DeclineRequest(ctx context.Context, chat string) error
 
+	// ApproveLinkCode starts adding the device that shows a link code
+	// (§7.2 step 2), and returns the confirmation code to show, as
+	// XXXX-XXXX. name is what the new device is called in the identity's
+	// chain.
+	ApproveLinkCode(ctx context.Context, code, name string) (string, error)
+
+	// ShowApprovalCode makes an approval code for a new device to read
+	// (§7.2.1), as text. It works for 10 minutes and for one device.
+	ShowApprovalCode(ctx context.Context, name string) (ApprovalCode, error)
+
+	// FinishApproval looks once for the new device's answer to the code
+	// ApproveLinkCode or ShowApprovalCode showed. Once it's there, it adds
+	// the device to the identity and to every chat (§7.2, §11.9), and
+	// returns true. ErrWrongConfirmation means the new device sent back
+	// another confirmation code; keep waiting.
+	FinishApproval(ctx context.Context) (bool, error)
+
+	// CancelApproval stops adding a device, and forgets its code.
+	CancelApproval()
+
+	// Devices lists the identity's devices, from its chain.
+	Devices(ctx context.Context) ([]Device, error)
+
+	// RemoveDevice removes another of the identity's devices (§7.6). Its
+	// chats follow (§11.9).
+	RemoveDevice(ctx context.Context, key string) error
+
 	// SignOut removes this device's identity from the profile. Afterwards,
 	// Open returns ErrNoIdentity.
 	SignOut(ctx context.Context) error
@@ -107,6 +156,47 @@ var ErrNoIdentity = errors.New("this profile doesn't have an identity yet")
 // them. A backend may return the same recovery words from the next
 // SignUp, and the interface then doesn't ask for them back again.
 var ErrSignUpRefused = errors.New("the homeserver refused the handle or registration code")
+
+// ErrNotLinkedYet is what FinishLink returns until the other device has
+// added this one.
+var ErrNotLinkedYet = errors.New("the other device hasn't added this one yet")
+
+// ErrWrongConfirmation is what FinishApproval returns when the new device
+// sent back a confirmation code other than the one shown.
+var ErrWrongConfirmation = errors.New("the new device sent back a different confirmation code. Check the code, and enter it there again")
+
+// ErrApprovalUsedTwice is what FinishApproval returns when more than one
+// device used an approval code (§7.2.1 step 3). None of them is added.
+var ErrApprovalUsedTwice = errors.New("more than one device used the code, so Railcar added none of them. Someone else may have seen it")
+
+// ErrApprovalExpired is what FinishApproval returns once an approval code
+// has stopped working, after 10 minutes.
+var ErrApprovalExpired = errors.New("the code expired. Make a new one to add a device")
+
+// LinkRequest names the identity a new device signs in to.
+type LinkRequest struct {
+	Handle     string
+	Homeserver string
+}
+
+// ApprovalCode is an approval code to show, and when it stops working.
+type ApprovalCode struct {
+	Text    string
+	Expires time.Time
+}
+
+// Device is one of the identity's devices.
+type Device struct {
+	// Key identifies the device, for RemoveDevice.
+	Key string
+	// Name is what it's called in the identity's chain, such as "Kat's
+	// laptop". It may be empty.
+	Name string
+	// Added is when it was added.
+	Added time.Time
+	// This is true for the device Railcar is running on.
+	This bool
+}
 
 // Identity is the signed-in identity, as the interface shows it.
 type Identity struct {
@@ -225,7 +315,10 @@ type Message struct {
 	Reactions   []Reaction
 	// Read is true for the identity's own message once the other side sent
 	// a read receipt for it (§13.3).
-	Read   bool
+	Read bool
+	// System marks a line Railcar shows on its own, such as "@kat has a new
+	// device" (§11.9). It has no sender.
+	System bool
 	Status MessageStatus
 }
 

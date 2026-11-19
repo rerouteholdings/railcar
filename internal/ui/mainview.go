@@ -37,6 +37,9 @@ const (
 	overlaySignOut
 	overlayAddContact
 	overlayInvite
+	overlayAddDevice
+	overlayApprovalCode
+	overlayDevices
 )
 
 // narrowWidth is the width under which the main view shows one pane at a
@@ -93,6 +96,9 @@ type mainView struct {
 	addErr     string
 	addBusy    bool
 	inviteCode string
+
+	// The device boxes: adding one, an approval code, and the list.
+	dev devicesState
 
 	// The composer's mode: answering a message, or changing one of the
 	// identity's own.
@@ -631,6 +637,9 @@ func (m *mainView) update(a *App, msg tea.Msg) tea.Cmd {
 		}
 		m.notice = "Request sent. Your chat starts when they accept."
 		return nil
+	case approvingMsg, approvalTickMsg, approvedMsg, devicesMsg:
+		cmd, _ := m.devicesUpdate(a, msg)
+		return cmd
 	case typingOffMsg:
 		if msg.seq == m.typingSeq && msg.chat == m.typingChat {
 			return m.stopTyping(a)
@@ -643,6 +652,14 @@ func (m *mainView) update(a *App, msg tea.Msg) tea.Cmd {
 	case tea.MouseWheelMsg:
 		return m.wheel(a, msg.Mouse())
 	case tea.PasteMsg:
+		switch m.overlay {
+		case overlayAddDevice, overlayApprovalCode:
+			return m.devicePaste(msg)
+		case overlayAddContact:
+			var cmd tea.Cmd
+			m.addInput, cmd = m.addInput.Update(msg)
+			return cmd
+		}
 		if m.overlay == overlayPalette {
 			var cmd tea.Cmd
 			m.palette.input, cmd = m.palette.input.Update(msg)
@@ -684,6 +701,10 @@ func (m *mainView) key(a *App, msg tea.KeyPressMsg) tea.Cmd {
 		return cmd
 	case overlayAddContact:
 		return m.addContactKey(a, msg)
+	case overlayAddDevice, overlayApprovalCode:
+		return m.addDeviceKey(a, msg)
+	case overlayDevices:
+		return m.devicesKey(a, msg)
 	case overlayInvite:
 		if key.Matches(msg, k.Back) || msg.String() == "enter" || msg.String() == "q" {
 			m.overlay = overlayNone
@@ -943,6 +964,12 @@ func (m *mainView) view(a *App) string {
 		return overlayOn(screen, m.addContactView(a), a.width, a.height)
 	case overlayInvite:
 		return overlayOn(screen, m.inviteView(a), a.width, a.height)
+	case overlayAddDevice:
+		return overlayOn(screen, m.addDeviceView(a), a.width, a.height)
+	case overlayApprovalCode:
+		return overlayOn(screen, m.approvalCodeView(a), a.width, a.height)
+	case overlayDevices:
+		return overlayOn(screen, m.devicesView(a), a.width, a.height)
 	}
 	return screen
 }
@@ -1151,7 +1178,7 @@ func (m *mainView) signOutView(a *App) string {
 	t := a.theme
 	w := min(a.width-6, 56)
 	content := t.bold.Render("Sign out of @"+a.identity.Handle+"?") + "\n\n" +
-		t.muted.Width(w).Render("Railcar removes the identity from this device. To sign in again, you need your recovery code.") + "\n\n" +
+		t.muted.Width(w).Render("Railcar removes the identity from this device. To sign in again, use another of your devices, or your recovery code.") + "\n\n" +
 		t.accent.Render("enter") + t.muted.Render(" sign out   ") + t.accent.Render("esc") + t.muted.Render(" cancel")
 	return t.overlay.Render(fit(content, w, lipgloss.Height(content)))
 }

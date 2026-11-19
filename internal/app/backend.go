@@ -43,6 +43,13 @@ type Backend struct {
 	signup *client.Signup
 	req    ui.SignUpRequest // what the pending signup was started with
 
+	// Linking: this device signing in with another's help, or this device
+	// adding a new one, by its link code or by an approval code (§7.2).
+	link           *client.Link
+	approval       *client.LinkApproval
+	approvalSecret *client.ApprovalSecret
+	approvalName   string
+
 	runCancel context.CancelFunc
 	runDone   chan struct{}
 	pumpDone  chan struct{}
@@ -213,9 +220,9 @@ func (b *Backend) FinishSignUp(ctx context.Context) error {
 
 // Recover implements ui.Backend. Signing in with the recovery code adds a
 // new device to the identity's chain with a recovery-signed entry (§6.4.1),
-// which comes with linking devices in a later version of Railcar.
+// which comes in a later version of Railcar.
 func (b *Backend) Recover(context.Context, string, []string) (ui.Identity, error) {
-	return ui.Identity{}, errors.New("Signing in with a recovery code comes in a later version of Railcar. For now, create a new identity")
+	return ui.Identity{}, errors.New("Signing in with a recovery code comes in a later version of Railcar. For now, sign in with another device, or create a new identity")
 }
 
 // Connect implements ui.Backend: it runs the chat layer's live stream
@@ -371,7 +378,7 @@ func uiMessage(eng *chat.Engine, me, chatID string, m chat.Message) ui.Message {
 	out := ui.Message{
 		ID: m.ID, Chat: chatID, Sender: member(eng, m.From), Mine: m.From == me,
 		Sent: time.Unix(m.TS, 0), Text: m.Body, ReplyTo: m.Reply, Edited: m.Edited,
-		Deleted: m.Deleted, Unsupported: m.Unsupported != "", Read: len(m.ReadBy) > 0,
+		Deleted: m.Deleted, Unsupported: m.Unsupported != "", Read: len(m.ReadBy) > 0, System: m.System,
 	}
 	switch m.Status {
 	case chat.Sending:

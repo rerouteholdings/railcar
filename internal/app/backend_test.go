@@ -167,3 +167,129 @@ func TestE2EBackend(t *testing.T) {
 		t.Errorf("after signing out: %v", err)
 	}
 }
+
+// TestE2EBackendLink links a second Railcar device through the
+// interface's calls, with both devices on the live stream: the new device
+// shows a link code, the existing one approves it, and the chat appears on
+// the new device. Then the existing device removes it.
+func TestE2EBackendLink(t *testing.T) {
+	bin := testnet.Rerouted(t)
+	o := testnet.Start(t, bin, "a.test", "b.test")
+	ctx := context.Background()
+	kat, _ := signUp(t, o, "a.test", "kat")
+	ravi, _ := signUp(t, o, "b.test", "ravi")
+	code, err := ravi.MakeInvite(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := kat.AddContact(ctx, code); err != nil {
+		t.Fatal(err)
+	}
+	req := wait(t, ravi, "Kat's request", func(e ui.Event) bool {
+		c, ok := e.(ui.ChatChanged)
+		return ok && c.Chat.Kind == ui.ContactRequest
+	}).(ui.ChatChanged).Chat
+	if err := ravi.AcceptRequest(ctx, req.ID); err != nil {
+		t.Fatal(err)
+	}
+	direct := wait(t, kat, "the direct chat", func(e ui.Event) bool {
+		c, ok := e.(ui.ChatChanged)
+		return ok && c.Chat.Kind == ui.DirectChat
+	}).(ui.ChatChanged).Chat
+
+	// The new device.
+	desk := New(Options{ProfileDir: filepath.Join(t.TempDir(), "desk"), Client: client.Options{Origins: o, DeviceName: "Railcar on the desk"}})
+	t.Cleanup(func() { desk.Close() })
+	if _, err := desk.Open(ctx); !errors.Is(err, ui.ErrNoIdentity) {
+		t.Fatal(err)
+	}
+	if _, err := desk.StartLink(ctx, ui.LinkRequest{Handle: "nobody.a.test", Homeserver: "a.test"}); err == nil {
+		t.Error("linked to a handle nobody has")
+	}
+	linkCode, err := desk.StartLink(ctx, ui.LinkRequest{Handle: "kat.a.test", Homeserver: "a.test"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := desk.FinishLink(ctx); !errors.Is(err, ui.ErrNotLinkedYet) {
+		t.Fatalf("before approval: %v", err)
+	}
+	confirm, err := kat.ApproveLinkCode(ctx, linkCode, "Kat's desk")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := desk.ConfirmLink(ctx, confirm); err != nil {
+		t.Fatal(err)
+	}
+	for added := false; !added; {
+		if added, err = kat.FinishApproval(ctx); err != nil {
+			t.Fatal(err)
+		}
+		time.Sleep(200 * time.Millisecond)
+	}
+	var id ui.Identity
+	for {
+		id, err = desk.FinishLink(ctx)
+		if err == nil {
+			break
+		}
+		if !errors.Is(err, ui.ErrNotLinkedYet) {
+			t.Fatal(err)
+		}
+		time.Sleep(200 * time.Millisecond)
+	}
+	if id.Handle != "kat.a.test" || id.Device != "Kat's desk" {
+		t.Errorf("the linked identity: %+v", id)
+	}
+	if err := desk.Connect(ctx); err != nil {
+		t.Fatal(err)
+	}
+	wait(t, desk, "the chat on the new device", func(e ui.Event) bool {
+		c, ok := e.(ui.ChatChanged)
+		return ok && c.Chat.ID == direct.ID && c.Chat.Title == "@ravi.b.test"
+	})
+	wait(t, kat, "the line for the new device", func(e ui.Event) bool {
+		a, ok := e.(ui.MessageAdded)
+		return ok && a.Message.System && a.Message.Text == "A new device was added to your account"
+	})
+	rchats, _ := ravi.Chats(ctx)
+	var rdirect ui.Chat
+	for _, c := range rchats {
+		if c.Kind == ui.DirectChat {
+			rdirect = c
+		}
+	}
+	wait(t, ravi, "the line for Kat's new device", func(e ui.Event) bool {
+		a, ok := e.(ui.MessageAdded)
+		return ok && a.Message.System && a.Message.Text == "@kat.a.test has a new device"
+	})
+	if _, err := ravi.Send(ctx, rdirect.ID, ui.Draft{Text: "hello to the desk"}); err != nil {
+		t.Fatal(err)
+	}
+	wait(t, desk, "Ravi's message on the new device", func(e ui.Event) bool {
+		a, ok := e.(ui.MessageAdded)
+		return ok && a.Message.Text == "hello to the desk"
+	})
+
+	// The device list, and removing the desk.
+	devs, err := kat.Devices(ctx)
+	if err != nil || len(devs) != 2 {
+		t.Fatalf("%+v %v", devs, err)
+	}
+	var deskKey string
+	for _, d := range devs {
+		if d.Name == "Kat's desk" && !d.This {
+			deskKey = d.Key
+		}
+	}
+	if deskKey == "" {
+		t.Fatalf("the desk isn't listed: %+v", devs)
+	}
+	if err := kat.RemoveDevice(ctx, deskKey); err != nil {
+		t.Fatal(err)
+	}
+	wait(t, desk, "the desk signed out", func(e ui.Event) bool { _, ok := e.(ui.SignedOut); return ok })
+	wait(t, ravi, "the line for the removed device", func(e ui.Event) bool {
+		a, ok := e.(ui.MessageAdded)
+		return ok && a.Message.System && a.Message.Text == "A device of @kat.a.test's was removed"
+	})
+}

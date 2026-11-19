@@ -45,6 +45,14 @@ type DemoBackend struct {
 	stop     chan struct{}
 	// connStop ends the current connection's timed loop.
 	connStop chan struct{}
+
+	// Linking devices: the identity a sign-in is for, the device being
+	// added, how often each was polled, and the identity's devices.
+	linking      *Identity
+	linkPolls    int
+	approving    string
+	approvePolls int
+	devices      []Device
 }
 
 // The words the demo draws recovery codes from. They're from the BIP-39
