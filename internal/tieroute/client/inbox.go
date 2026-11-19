@@ -158,6 +158,15 @@ type Outgoing struct {
 	Data      wire.Bytes   `json:"data"`
 	Commit    *wire.Signed `json:"commit,omitempty"`
 	Hub       string       `json:"hub,omitempty"`
+	Welcomes  []Welcome    `json:"welcomes,omitempty"`
+}
+
+// Welcome is a Welcome sent with a commit, delivered only if the hub
+// accepts the commit (§11.6).
+type Welcome struct {
+	ID   string     `json:"id"`
+	To   []string   `json:"to"`
+	Data wire.Bytes `json:"data"`
 }
 
 // SendResult is the homeserver's answer for one outgoing delivery.

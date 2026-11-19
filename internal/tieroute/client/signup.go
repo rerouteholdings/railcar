@@ -166,6 +166,7 @@ func (s *Signup) Register(ctx context.Context, profileDir, handle, invite string
 	}
 	c := newClient(s.profile, s.opts)
 	c.clock = clock
+	c.resolver.Self = s.server
 	c.device = s.device
 
 	// Register the genesis. A clock-skew answer carries the server's time,

@@ -101,12 +101,14 @@ var (
 )
 
 func newClient(p *store.Profile, opts Options) *Client {
-	return &Client{
+	c := &Client{
 		opts:     opts,
 		profile:  p,
 		resolver: &discovery.Resolver{HTTP: opts.httpClient(), Origins: opts.Origins},
 		clock:    &Clock{},
 	}
+	c.resolver.Via = c.fetchServerDoc
+	return c
 }
 
 // Open opens an existing profile. It doesn't contact the homeserver; the
@@ -149,6 +151,7 @@ func (c *Client) load(st savedState) error {
 		return fmt.Errorf("client: stored chain: %w", err)
 	}
 	c.state, c.device, c.chain = st, dev, chain
+	c.resolver.Self = st.Server
 	return nil
 }
 
@@ -399,3 +402,9 @@ func (c *Client) SignOut(ctx context.Context) error {
 func (c *Client) DeleteProfile() error {
 	return c.profile.Destroy()
 }
+
+// Profile returns the profile the client keeps its records in. Other parts
+// of Railcar, such as the MLS state and the local message history, keep
+// their own records in it, under names that don't start with "identity"
+// or "chain.".
+func (c *Client) Profile() *store.Profile { return c.profile }
