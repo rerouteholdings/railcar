@@ -2,6 +2,7 @@ package ui
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"slices"
 	"strings"
@@ -49,6 +50,9 @@ type onboarding struct {
 	positions []int
 	answers   []string
 	written   bool
+	// confirmed holds words already typed back, when the homeserver then
+	// refused the handle or code.
+	confirmed []string
 }
 
 // Messages from onboarding's commands.
@@ -235,6 +239,14 @@ func (o *onboarding) update(a *App, msg tea.Msg) tea.Cmd {
 		}
 		o.identity, o.words = msg.identity, msg.words
 		o.code = ""
+		if slices.Equal(o.confirmed, msg.words) {
+			// The same words, already typed back before the homeserver
+			// refused the handle or code: register straight away.
+			o.toBusy("Creating your identity on " + msg.identity.Homeserver)
+			return tea.Batch(a.startSpinner(), call(func(ctx context.Context) tea.Msg {
+				return finishedMsg{a.b.FinishSignUp(ctx)}
+			}))
+		}
 		o.toWords(a)
 		return o.form.Init()
 	case recoveredMsg:
@@ -246,13 +258,19 @@ func (o *onboarding) update(a *App, msg tea.Msg) tea.Cmd {
 		o.recWords = ""
 		return a.enterMain(msg.identity)
 	case finishedMsg:
+		if errors.Is(msg.err, ErrSignUpRefused) {
+			o.err = sentence(msg.err)
+			o.confirmed = o.words
+			o.toCreate(a)
+			return o.form.Init()
+		}
 		if msg.err != nil {
 			o.err = sentence(msg.err)
 			o.toWords(a)
 			return o.form.Init()
 		}
 		// The words are on paper now. Forget them here too (§6.1).
-		o.words, o.answers = nil, nil
+		o.words, o.answers, o.confirmed = nil, nil, nil
 		return a.enterMain(o.identity)
 	}
 
