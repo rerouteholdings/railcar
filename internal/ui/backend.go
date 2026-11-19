@@ -31,8 +31,9 @@ type Backend interface {
 	FinishSignUp(ctx context.Context) error
 
 	// Recover signs in to an existing identity on this device with its
-	// handle and recovery code (§6.1).
-	Recover(ctx context.Context, handle string, words []string) (Identity, error)
+	// recovery code, for someone who has lost every device (§6.1, §6.4.1).
+	// Every other device of the identity is removed.
+	Recover(ctx context.Context, req RecoverRequest) (Identity, error)
 
 	// StartLink starts signing in to an existing identity with another
 	// device's help (§7.2): this device makes its keys, leaves its key on
@@ -210,6 +211,14 @@ var ErrApprovalExpired = errors.New("the code expired. Make a new one to add a d
 type LinkRequest struct {
 	Handle     string
 	Homeserver string
+}
+
+// RecoverRequest is what signing in with the recovery code needs: the
+// identity's handle and homeserver, and its 12 recovery words.
+type RecoverRequest struct {
+	Handle     string
+	Homeserver string
+	Words      []string
 }
 
 // ApprovalCode is an approval code to show, and when it stops working.

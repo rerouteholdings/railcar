@@ -213,6 +213,41 @@ func StartLinkWithApproval(ctx context.Context, code string, opts Options) (*Lin
 
 // beginLink finds the identity and makes the new device's keys.
 func beginLink(ctx context.Context, server, handle string, opts Options) (*Link, error) {
+	f, err := findIdentity(ctx, server, handle, opts, false)
+	if err != nil {
+		return nil, err
+	}
+	dev, err := identity.GenerateDevice(opts.DeviceName)
+	if err != nil {
+		return nil, err
+	}
+	kem, _, _ := hpkeSuite()
+	priv, err := kem.GenerateKey()
+	if err != nil {
+		return nil, err
+	}
+	return &Link{
+		opts: opts, server: f.server, handle: f.handle, id: f.chain.ID(), device: dev,
+		hpke: priv, pub: priv.PublicKey().Bytes(), api: f.api, clock: f.clock,
+	}, nil
+}
+
+// found is an identity found on its homeserver before this device has a
+// session: the API, the server's clock, and the identity's chain.
+type found struct {
+	server, handle string
+	api            *api
+	clock          *Clock
+	chain          *identity.Chain
+}
+
+// findIdentity finds the identity with handle on server, without a
+// session: it checks the server document, resolves the handle there, and
+// fetches and validates the chain, which has to name the handle and the
+// server (§5.3). With movedAway, the chain may name another home, if a
+// device-signed entry moved it there from server, which a recovery can
+// undo (§6.4.1).
+func findIdentity(ctx context.Context, server, handle string, opts Options, movedAway bool) (*found, error) {
 	server = strings.ToLower(strings.TrimSpace(server))
 	if err := identity.CheckServerName(server); err != nil {
 		return nil, err
@@ -248,7 +283,7 @@ func beginLink(ctx context.Context, server, handle string, opts Options) (*Link,
 	if !identity.ValidIdentifier(res.ID) {
 		return nil, fmt.Errorf("client: resolve answered %q", res.ID)
 	}
-	if res.Home != server {
+	if res.Home != server && !movedAway {
 		return nil, fmt.Errorf("client: @%s's homeserver is %s, not %s", handle, res.Home, server)
 	}
 	var cr chainRes
@@ -262,23 +297,10 @@ func beginLink(ctx context.Context, server, handle string, opts Options) (*Link,
 	if chain.ID() != res.ID || chain.State.Handle != handle {
 		return nil, ErrHandleMismatch
 	}
-	if chain.State.Home != server {
+	if chain.State.Home != server && !(movedAway && movedFrom(chain, server)) {
 		return nil, fmt.Errorf("client: @%s's homeserver is %s, not %s", handle, chain.State.Home, server)
 	}
-
-	dev, err := identity.GenerateDevice(opts.DeviceName)
-	if err != nil {
-		return nil, err
-	}
-	kem, _, _ := hpkeSuite()
-	priv, err := kem.GenerateKey()
-	if err != nil {
-		return nil, err
-	}
-	return &Link{
-		opts: opts, server: server, handle: handle, id: res.ID, device: dev,
-		hpke: priv, pub: priv.PublicKey().Bytes(), api: a, clock: clock,
-	}, nil
+	return &found{server: server, handle: handle, api: a, clock: clock, chain: chain}, nil
 }
 
 // leaveProof signs a link proof with the new device's composite key, its
@@ -687,4 +709,18 @@ func (c *Client) RemoveDevice(ctx context.Context, key []byte) error {
 	}
 	_, err := c.Append(ctx, identity.RemoveDevice(key))
 	return err
+}
+
+// movedFrom reports whether a device-signed entry after the newest
+// recovery-signed one moved the identity away from server.
+func movedFrom(chain *identity.Chain, server string) bool {
+	for p := int(chain.State.LastRecoverySeq + 1); p < chain.Len(); p++ {
+		info := chain.Info[p]
+		for _, op := range info.Body.Ops {
+			if !info.Recovery && op.Op == identity.OpSetHome && info.HomeBefore == server && op.Home != server {
+				return true
+			}
+		}
+	}
+	return false
 }

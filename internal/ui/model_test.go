@@ -425,6 +425,8 @@ func TestRecover(t *testing.T) {
 	}
 	send(a, b, typeText("kat.chat.example.com")...)
 	send(a, b, tea.KeyPressMsg{Code: tea.KeyEnter})
+	send(a, b, typeText("chat.example.com")...)
+	send(a, b, tea.KeyPressMsg{Code: tea.KeyEnter})
 	send(a, b, typeText("too few words")...)
 	send(a, b, tea.KeyPressMsg{Code: tea.KeyEnter})
 	if a.screen != screenOnboarding || !strings.Contains(plain(a), "12 words") {

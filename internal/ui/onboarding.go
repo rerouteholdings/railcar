@@ -50,6 +50,7 @@ type onboarding struct {
 	code       string
 	recHandle  string
 	recWords   string
+	recServer  string
 
 	// Signing in with another device: which way round, the identity, the
 	// link code shown, the codes typed, and which link a poll is for.
@@ -174,8 +175,14 @@ func (o *onboarding) toRecover(a *App) {
 			Value(&o.recHandle).
 			Validate(func(s string) error { return checkHandle(normalizeHandle(s)) }),
 		huh.NewInput().
+			Title("Homeserver").
+			Description("The server that holds your identity.").
+			Placeholder("chat.example.com").
+			Value(&o.recServer).
+			Validate(func(s string) error { return checkHomeserver(normalizeHomeserver(s)) }),
+		huh.NewInput().
 			Title("Recovery code").
-			Description("The 12 words you wrote down when you created the identity, in order.").
+			Description("The 12 words you wrote down when you created the identity, in order. This signs out every other device of the identity.").
 			Value(&o.recWords).
 			EchoMode(huh.EchoModePassword).
 			Validate(checkRecoveryWords),
@@ -366,10 +373,10 @@ func (o *onboarding) submit(a *App) tea.Cmd {
 			return signedUpMsg{id, words, err}
 		}))
 	case stepRecover:
-		handle, words := normalizeHandle(o.recHandle), splitWords(o.recWords)
-		o.toBusy("Signing in as @" + handle)
+		req := RecoverRequest{Handle: normalizeHandle(o.recHandle), Homeserver: normalizeHomeserver(o.recServer), Words: splitWords(o.recWords)}
+		o.toBusy("Signing in as @" + req.Handle)
 		return tea.Batch(a.startSpinner(), call(func(ctx context.Context) tea.Msg {
-			id, err := a.b.Recover(ctx, handle, words)
+			id, err := a.b.Recover(ctx, req)
 			return recoveredMsg{id, err}
 		}))
 	case stepWords:

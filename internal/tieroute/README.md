@@ -78,6 +78,16 @@ On the device that approves:
 
 `ParseLinkCode` and `ParseApprovalCode` read codes as the client API says: any case, a space instead of the dash after the prefix, and only letters and digits counting in the bytes. A short-form link code, with only the device key, gets no link bundle.
 
+## Recovering an identity
+
+A user who has lost every device signs in with the 12 recovery words (§6.3, client API, Recover an identity):
+
+```go
+c, err := client.Recover(ctx, "chat.example.com", "kat.chat.example.com", words, profileDir, opts)
+```
+
+`Recover` finds the identity without a session, finds the current recovery key by trying keys 1 to n + 1 against the chain's commitment (§6.1), and signs one entry with it: `remove-device` for every device, `add-device` for this one, and `set-recovery` for the next key. When a device-signed entry moved the identity since the newest recovery-signed one, the entry attaches right before that move instead, which undoes it (§6.4.1). It sends the entry to `POST recover`, signs in, and gets the account key back from the `"recovery"` wrap, or a staged wrap of the same code (§7.4). Words that aren't the current code fail with `identity.ErrNotCurrentCode` before anything is sent.
+
 ## Key packages and MLS
 
 The MLS layer makes key packages through `client.KeyPackageMaker`:

@@ -16,6 +16,7 @@ import (
 
 	"github.com/rerouteholdings/railcar/internal/chat"
 	"github.com/rerouteholdings/railcar/internal/tieroute/client"
+	"github.com/rerouteholdings/railcar/internal/tieroute/identity"
 	"github.com/rerouteholdings/railcar/internal/tieroute/store"
 	"github.com/rerouteholdings/railcar/internal/tieroute/wire"
 	"github.com/rerouteholdings/railcar/internal/ui"
@@ -218,11 +219,39 @@ func (b *Backend) FinishSignUp(ctx context.Context) error {
 	return nil
 }
 
-// Recover implements ui.Backend. Signing in with the recovery code adds a
-// new device to the identity's chain with a recovery-signed entry (§6.4.1),
-// which comes in a later version of Railcar.
-func (b *Backend) Recover(context.Context, string, []string) (ui.Identity, error) {
-	return ui.Identity{}, errors.New("Signing in with a recovery code comes in a later version of Railcar. For now, sign in with another device, or create a new identity")
+// Recover implements ui.Backend: it signs in with the recovery code, which
+// adds this device and removes every other one with a recovery-signed
+// entry (§6.4.1, client API, Recover an identity). Then it takes the
+// contact list from the homeserver, and uploads key packages, so contacts
+// add this device to their chats with them (§11.9).
+func (b *Backend) Recover(ctx context.Context, req ui.RecoverRequest) (ui.Identity, error) {
+	b.clearLeftover()
+	c, err := client.Recover(ctx, req.Homeserver, req.Handle, req.Words, b.opts.ProfileDir, b.opts.Client)
+	switch {
+	case errors.Is(err, identity.ErrNotCurrentCode):
+		return ui.Identity{}, errors.New("Those words aren't this identity's current recovery code")
+	case errors.Is(err, identity.ErrWords):
+		return ui.Identity{}, errors.New("Those aren't recovery words: check each word and their order")
+	case errors.Is(err, client.ErrNoRecoveryWrap):
+		return ui.Identity{}, errors.New("You're signed in, but the homeserver has no copy of your account key for these words")
+	case wire.IsCode(err, wire.CodeNotFound):
+		return ui.Identity{}, errors.New("Nobody has that handle on that homeserver")
+	case err != nil:
+		return ui.Identity{}, friendly(err)
+	}
+	id, err := b.start(c)
+	if err != nil {
+		return ui.Identity{}, err
+	}
+	if eng, err := b.engine(); err == nil {
+		if err := eng.ImportContacts(ctx); err != nil {
+			b.log.Info("app: the contact list", "err", err)
+		}
+		if err := eng.EnsureKeyPackages(ctx); err != nil {
+			b.log.Info("app: key packages", "err", err)
+		}
+	}
+	return id, nil
 }
 
 // Connect implements ui.Backend: it runs the chat layer's live stream

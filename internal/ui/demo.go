@@ -289,15 +289,12 @@ func (d *DemoBackend) FinishSignUp(context.Context) error {
 }
 
 // Recover implements Backend. The demo takes any 12 words.
-func (d *DemoBackend) Recover(_ context.Context, handle string, words []string) (Identity, error) {
-	if len(words) != 12 {
+func (d *DemoBackend) Recover(_ context.Context, req RecoverRequest) (Identity, error) {
+	if len(req.Words) != 12 {
 		return Identity{}, errors.New("A recovery code has 12 words")
 	}
 	id := demoKat
-	id.Handle = handle
-	if _, home, ok := strings.Cut(handle, "."); ok {
-		id.Homeserver = home
-	}
+	id.Handle, id.Homeserver = req.Handle, req.Homeserver
 	d.mu.Lock()
 	d.identity = &id
 	d.mu.Unlock()
