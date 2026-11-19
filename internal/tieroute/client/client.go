@@ -391,3 +391,11 @@ func (c *Client) SignOut(ctx context.Context) error {
 	c.state.Token, c.state.TokenExpires = "", 0
 	return c.saveLocked()
 }
+
+// DeleteProfile deletes this device's profile: its keys, chain copies, and
+// the profile key in the keychain. It doesn't sign out or remove the
+// device from the identity's chain; call SignOut first. Without another
+// device, only the recovery code gets the identity back.
+func (c *Client) DeleteProfile() error {
+	return c.profile.Destroy()
+}

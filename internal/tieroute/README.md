@@ -1,0 +1,83 @@
+# Tieroute protocol base
+
+This page describes `internal/tieroute`, the part of Railcar that speaks the Tieroute protocol, wire version 2. It's for anyone working on Railcar's interface or MLS layer who calls into it. Section references (§) are to the public Tieroute specification.
+
+## Packages
+
+| Package | What it does |
+|---|---|
+| `wire` | I-JSON decoding, base64url byte strings, JCS (RFC 8785), the signed envelope, the error format, and the media type and signature context (§4) |
+| `sig` | Strict Ed25519 (§4.3), and the composite ML-DSA-65 + Ed25519 signature `MLDSA65-Ed25519-SHA512` (§3.2), with Go's `crypto/mldsa` |
+| `identity` | Device keys and message keys (§3.2.3), recovery codes and their 12 words (§6.1), identity chains and their validation (§6.2 to §6.4), the fork rule (§6.4.1), vouching (§6.5), snapshot authorization (§7.1), `msg-key` and `kp-binding`, and handle syntax (§5.4) |
+| `codes` | Contact verification codes (§6.7), and the keys of community join codes (§16.6) |
+| `discovery` | Server documents and their API base URLs (§5.1, §8.1), and handle records over HTTPS and DNS (§5.3) |
+| `store` | The profile directory: records encrypted at rest under a key in the system keychain |
+| `client` | Signing up, signing in, chains, handles, key packages, the inbox, and the live stream |
+
+## The client API
+
+Sign up in two steps, so the interface can show the recovery words and ask for some of them back before anything is registered (§6.1):
+
+```go
+s, err := client.NewSignup(ctx, "chat.example.com", client.Options{DeviceName: "Kat's laptop"})
+words := s.Words()                 // show words.Words() once
+pos := words.PickPositions(3)      // ask for these back
+ok := words.CheckTyped(pos, typed) // trimmed, any case
+c, err := s.Register(ctx, profileDir, "kat", registrationCode)
+```
+
+`Register` takes a full handle, or one label to put under the server's handle domain. After a `handle-taken` or `bad-invite` error, call it again with another handle or code: the words stay the same. `Signup.Abort` deletes the profile of a signup that never registered. `client.Register(ctx, server, handle, code, profileDir, opts)` does both steps at once, and returns the words with the client.
+
+Registering also signs in, and stores the account key's recovery wrap on the homeserver (§7.4). The recovery code isn't kept after that.
+
+Other calls:
+
+- `client.Open(profileDir, opts)` opens a saved profile. It doesn't contact the homeserver; the first call that needs a session signs in.
+- `c.SignIn(ctx)` signs in again. Calls that get `401 unauthenticated` sign in once and retry on their own, so a client rarely needs it.
+- `c.SignOut(ctx)` revokes the session token, and keeps the keys. `c.DeleteProfile()` then deletes the keys too.
+- `c.Session()` reports whether there's a token, and when it expires. The client API has no endpoint to list sessions.
+- `c.Stream(ctx, opts)` returns a channel of `client.Event`: `EventConnected`, `EventItem`, `EventPresence`, `EventError`, `EventDisconnected` (it reconnects with backoff), and `EventStopped`, after which the channel closes. `EventStopped` carries `client.ErrDeviceRemoved` when the homeserver closes the stream with code 4403.
+- `c.Inbox(ctx, after, limit)` and `c.Ack(ctx, cursor)` fetch and acknowledge inbox items. The stream doesn't ack; the caller acks what it has processed. A new stream starts after the last acked cursor.
+- `c.FetchChain(ctx, id, opts)` fetches and validates a chain, and keeps a copy under §6.5's rules. A chain that neither extends the copy nor is a valid recovery fork comes back as a `*client.ChainWarning`.
+- `c.ResolveHandle(ctx, handle)` resolves a handle through the homeserver and checks both directions (§5.3). `client.ErrHandleMismatch` means "handle no longer valid".
+- `c.Append(ctx, ops...)` appends a device-signed entry to the identity's chain, such as `identity.AddDevice(pub, name)`.
+- `c.Send(ctx, ...)` and `c.SendLink(ctx, data)` submit deliveries.
+- `c.Clock()` is the homeserver's time. Warn the user when `Skew()` is over a minute (§8.4).
+- `c.Warning()` is a warning to show about the profile, such as a key stored in a file.
+
+## Key packages and MLS
+
+The MLS layer makes key packages through `client.KeyPackageMaker`:
+
+```go
+type KeyPackageMaker interface {
+	KeyPackages(n int, lastResort bool) ([][]byte, error)
+}
+```
+
+`c.MLSInfo()` gives the MLS layer what each leaf needs (§7.1): the `BasicCredential` identity, the message key's 32-byte Ed25519 seed (the MLS signature key), and the `tieroute_msg_key` extension data. `c.UploadKeyPackages(ctx, maker, client.DefaultKeyPackages, client.UploadOptions{LastResort: true})` binds each key package with a `kp-binding` and uploads it.
+
+## Profiles
+
+Each profile is one directory. Records are encrypted with AES-256-GCM under a 32-byte key stored in the system keychain (macOS Keychain, Windows Credential Manager, or the Secret Service on Linux). Writes go through a temporary file and a rename, so a crash leaves the old record or the new one.
+
+When there's no keychain, `client.Register` and `client.Open` fail with `store.ErrNoKeychain`. To go on anyway, set `Options.Store.AllowKeyFile`: the key is then kept in a file in the profile directory, and `c.Warning()` says so. Show that warning, since anyone who can read the directory can read the keys.
+
+Recovery words, tokens, and keys stay out of logs: `identity.RecoveryWords` doesn't print its words, and `Options.Logger` gets only request paths and statuses.
+
+## Local test networks
+
+Servers on a local test network are reached through `Options.Origins`, which maps server names to origins, such as `"a.test": "http://127.0.0.1:18471"`. Those servers may use plain HTTP. Development modes like this are implementation features, not protocol (§5.1). A profile made this way remembers its origin.
+
+## Tests
+
+The shared test vectors are copied into `testdata/vectors`. `go test ./internal/tieroute/...` checks every wire version 2 vector this part of Railcar covers: `composite`, `signed`, `msgkey`, `recovery`, `chain`, `fork`, `vouch`, `basis`, `s2s`, `codes`, and `code`, plus `ed25519.json` and `account.json` from version 1, which still hold. When the vectors change, copy them here again.
+
+The end-to-end test runs against a real rerouted, and is skipped unless `RAILCAR_REROUTED` names a rerouted binary:
+
+```sh
+(cd ../rerouted && go build -o /tmp/rerouted ./cmd/rerouted)
+RAILCAR_REROUTED=/tmp/rerouted go test ./internal/tieroute/client -run E2E -v
+```
+
+It starts rerouted in dev mode on a free port, registers, uploads key packages, signs in again from the saved profile, resolves the handle, receives a link delivery and a `chain-alert` over the stream, acks them, fetches the chain from a second identity, and signs out.
