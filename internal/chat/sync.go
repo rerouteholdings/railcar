@@ -131,7 +131,7 @@ func (e *Engine) syncChat(ctx context.Context, ch *Chat) (bool, error) {
 	leaves := leavesByIdentity(st)
 	chains := map[string]*identity.Chain{}
 	for id := range leaves {
-		c, err := e.fetchChain(ctx, id, true)
+		c, err := e.syncChain(ctx, id)
 		if err != nil {
 			return false, err
 		}
@@ -260,6 +260,30 @@ func (e *Engine) syncChat(ctx context.Context, ch *Chat) (bool, error) {
 	e.deviceLines(ch, st, afterSt)
 	e.emit(Event{Kind: EventChat, Chat: ptr(ch.public())})
 	return complete, nil
+}
+
+// freshEvery is the least time between two fresh fetches of another
+// identity's chain for the sync rule, so retrying doesn't ask its home
+// every few seconds (§7.1, §11.9).
+const freshEvery = time.Minute
+
+// syncChain returns an identity's chain for the sync rule: fresh from its
+// home at most once a minute, and this device's copy in between. The
+// identity's own chain comes from its homeserver, which is its home.
+func (e *Engine) syncChain(ctx context.Context, id string) (*identity.Chain, error) {
+	if id == e.c.ID() {
+		return e.fetchChain(ctx, id, true)
+	}
+	if time.Since(e.fresh[id]) < freshEvery {
+		if c, err := e.c.CachedChain(id); err == nil && c != nil {
+			return c, nil
+		}
+	}
+	c, err := e.fetchChain(ctx, id, true)
+	if err == nil {
+		e.fresh[id] = time.Now()
+	}
+	return c, err
 }
 
 // removalWaiting reports whether a group still has a leaf whose device

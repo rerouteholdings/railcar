@@ -88,6 +88,9 @@ type Engine struct {
 	// syncUntil is when the sync rule stops retrying; zero when it's done
 	// (§11.9).
 	syncUntil time.Time
+	// fresh is when the sync rule last fetched each identity's chain from
+	// its home.
+	fresh map[string]time.Time
 
 	evMu   sync.Mutex
 	events chan Event
@@ -119,6 +122,7 @@ func New(c *client.Client, opts Options) (*Engine, error) {
 		key:    ed25519.NewKeyFromSeed(info.MsgKeySeed),
 		leaves: map[string]bool{},
 		seen:   map[string]bool{},
+		fresh:  map[string]time.Time{},
 		events: make(chan Event, 256),
 	}, nil
 }

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/rerouteholdings/railcar/internal/tieroute/client"
 	"github.com/rerouteholdings/railcar/internal/tieroute/identity"
@@ -133,6 +134,7 @@ func (e *Engine) notice(ctx context.Context, n *client.Notice) error {
 			}
 			// Their devices may have changed: every shared chat follows
 			// (§11.9).
+			e.fresh[n.ID] = time.Now()
 			e.wantSync()
 		}
 	case client.NoticeChainAlert:

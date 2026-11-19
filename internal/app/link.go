@@ -90,6 +90,11 @@ func (b *Backend) FinishLink(ctx context.Context) (ui.Identity, error) {
 		if err := eng.ImportContacts(ctx); err != nil {
 			b.log.Info("app: the contact list", "err", err)
 		}
+		// Key packages right away, so the other devices can add this one
+		// to their chats (§11.9).
+		if err := eng.EnsureKeyPackages(ctx); err != nil {
+			b.log.Info("app: key packages", "err", err)
+		}
 	}
 	return id, nil
 }
