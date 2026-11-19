@@ -106,6 +106,13 @@ type Resolver struct {
 	Origins map[string]string
 	// Now returns the time; nil means time.Now.
 	Now func() time.Time
+	// Via, when set, fetches the documents of servers other than Self
+	// through another server, such as a client's homeserver
+	// (GET servers/{name}), so those servers don't learn the device's
+	// address. It returns the document's bytes.
+	Via func(ctx context.Context, name string) ([]byte, error)
+	// Self is the server whose document is always fetched directly.
+	Self string
 
 	mu   sync.Mutex
 	docs map[string]cachedDoc
@@ -192,6 +199,19 @@ func (r *Resolver) Refresh(ctx context.Context, name string) (*ServerDoc, error)
 }
 
 func (r *Resolver) fetchDoc(ctx context.Context, name string) (*ServerDoc, time.Duration, error) {
+	if r.Via != nil && name != r.Self {
+		body, err := r.Via(ctx, name)
+		if err != nil {
+			return nil, 0, fmt.Errorf("discovery: %s: %w", name, err)
+		}
+		// A local test network's servers list plain HTTP bases, and so do
+		// the documents relayed by its homeserver.
+		doc, err := ParseServerDoc(body, name, r.dev(name) || r.dev(r.Self))
+		if err != nil {
+			return nil, 0, err
+		}
+		return doc, defaultCache, nil
+	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, r.Origin(name)+ServerPath, nil)
 	if err != nil {
 		return nil, 0, err
