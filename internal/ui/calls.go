@@ -5,6 +5,7 @@ import (
 	"strings"
 	"time"
 
+	"charm.land/bubbles/v2/key"
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
@@ -63,10 +64,10 @@ func (m *mainView) callChanged(a *App, bar *CallBar) tea.Cmd {
 	waiting := len(bar.Waiting) > 0 && (was == nil || len(was.Waiting) < len(bar.Waiting))
 	switch {
 	case ringing:
-		m.notice = "Call from " + who(bar.From) + ". Type :answer or :decline-call"
+		m.notice = "Call from " + who(bar.From) + ". Press Ctrl+Y to answer, or Ctrl+X to decline"
 		return notifyCmd(m.notify, "Railcar", "Call from "+who(bar.From))
 	case waiting:
-		m.notice = bar.Waiting[len(bar.Waiting)-1] + " is calling. Type :answer to end this call and answer"
+		m.notice = bar.Waiting[len(bar.Waiting)-1] + " is calling. Press Ctrl+Y to end this call and answer"
 		return notifyCmd(m.notify, "Railcar", bar.Waiting[len(bar.Waiting)-1]+" is calling")
 	}
 	return nil
@@ -93,9 +94,9 @@ func (m *mainView) callBarView(a *App) string {
 	switch c.Phase {
 	case "ringing":
 		parts = append(parts, seg(t.accent.Bold(true), " ☎ Call from "+who(c.From)), seg(st, " in "+c.Where),
-			seg(t.statusKey, "   :answer  :decline-call"))
+			seg(t.statusKey, "   ctrl+y answer  ctrl+x decline"))
 	case "calling":
-		parts = append(parts, seg(t.accent, " ☎ Calling "+c.Where), seg(t.statusKey, "   :hangup"))
+		parts = append(parts, seg(t.accent, " ☎ Calling "+c.Where), seg(t.statusKey, "   ctrl+x hang up"))
 	case "ended":
 		parts = append(parts, seg(st, " "+c.Ended))
 	default:
@@ -139,11 +140,14 @@ func (m *mainView) callBarView(a *App) string {
 		if c.Direct {
 			parts = append(parts, seg(t.statusKey, "  direct"))
 		}
-		hang := ":hangup"
-		if c.Voice {
-			hang = ":leave-voice"
+		mute, hang := "mute", "hang up"
+		if c.Muted || c.Deafened {
+			mute = "unmute"
 		}
-		parts = append(parts, seg(t.statusKey, "   :mute  "+hang))
+		if c.Voice {
+			hang = "leave"
+		}
+		parts = append(parts, seg(t.statusKey, "   ctrl+r "+mute+"  ctrl+x "+hang))
 	}
 	line := strings.Join(parts, "")
 	w := a.width
@@ -168,6 +172,39 @@ func clock(d time.Duration) string {
 func meter(level float64) string {
 	n := min(5, int(level*25+0.5))
 	return "mic " + strings.Repeat("▮", n) + strings.Repeat("▯", 5-n)
+}
+
+// callKey runs a call key: Ctrl+Y answers, Ctrl+X hangs up, declines a
+// ring, or leaves a voice channel, and Ctrl+R mutes or unmutes.
+func (m *mainView) callKey(a *App, msg tea.KeyPressMsg) tea.Cmd {
+	c := m.call
+	live := c != nil && c.Phase != "ringing" && c.Phase != "ended"
+	switch {
+	case key.Matches(msg, a.keys.Answer):
+		if c != nil && (c.Phase == "ringing" || len(c.Waiting) > 0) {
+			return m.act(a, "answer", "", "", false)
+		}
+		m.notice = "Nothing is ringing"
+	case key.Matches(msg, a.keys.HangUp):
+		switch {
+		case c != nil && c.Phase == "ringing":
+			return m.act(a, "decline-call", "", "", false)
+		case live && c.Voice:
+			return m.act(a, "leave-voice", "", "", false)
+		case live:
+			return m.act(a, "hangup", "", "", false)
+		}
+		m.notice = "You're not in a call"
+	case key.Matches(msg, a.keys.Mute):
+		if live {
+			if c.Muted || c.Deafened {
+				return m.act(a, "unmute", "", "", false)
+			}
+			return m.act(a, "mute", "", "", false)
+		}
+		m.notice = "You're not in a call"
+	}
+	return nil
 }
 
 // callCommands are the palette's commands for calls and voice channels.

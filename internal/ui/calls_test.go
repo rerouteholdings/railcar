@@ -14,7 +14,7 @@ func TestCallBar(t *testing.T) {
 	drive(a, b, a.main.openChat(a, "ravi", false))
 	runCommand(a, b, "call")
 	out := plain(a)
-	if !strings.Contains(out, "@ravi.chat.example.com") || !strings.Contains(out, "0:00") || !strings.Contains(out, ":hangup") {
+	if !strings.Contains(out, "@ravi.chat.example.com") || !strings.Contains(out, "0:00") || !strings.Contains(out, "ctrl+x hang up") {
 		t.Fatalf("the call bar:\n%s", out)
 	}
 	runCommand(a, b, "mute")
@@ -36,12 +36,43 @@ func TestVoiceBar(t *testing.T) {
 	drive(a, b, a.main.openChat(a, "c-lounge", false))
 	runCommand(a, b, "join-voice")
 	out := plain(a)
-	if !strings.Contains(out, "#Lounge in Night shift") || !strings.Contains(out, "You're in this voice channel.") || !strings.Contains(out, ":leave-voice") {
+	if !strings.Contains(out, "#Lounge in Night shift") || !strings.Contains(out, "You're in this voice channel.") || !strings.Contains(out, "ctrl+x leave") {
 		t.Fatalf("the voice bar:\n%s", out)
 	}
 	runCommand(a, b, "leave-voice")
 	if a.main.call != nil {
 		t.Fatal("the voice bar is still there")
+	}
+}
+
+// TestCallKeys answers, mutes, and hangs up with the call keys, from the
+// composer.
+func TestCallKeys(t *testing.T) {
+	a, b := started(t, 120, 40)
+	drive(a, b, a.main.openChat(a, "ravi", true))
+	ctrl := func(r rune) tea.KeyPressMsg { return tea.KeyPressMsg{Code: r, Mod: tea.ModCtrl} }
+	send(a, b, ctrl('y'))
+	if a.main.notice != "Nothing is ringing" {
+		t.Fatalf("Ctrl+Y with nothing ringing: %q", a.main.notice)
+	}
+	runCommand(a, b, "call")
+	if a.main.call == nil {
+		t.Fatal("no call")
+	}
+	send(a, b, ctrl('r'))
+	if !a.main.call.Muted || !strings.Contains(plain(a), "ctrl+r unmute") {
+		t.Fatalf("Ctrl+R didn't mute:\n%s", plain(a))
+	}
+	send(a, b, ctrl('r'))
+	if a.main.call.Muted {
+		t.Fatal("Ctrl+R didn't unmute")
+	}
+	if a.main.composer.Value() != "" {
+		t.Fatalf("the keys reached the composer: %q", a.main.composer.Value())
+	}
+	send(a, b, ctrl('x'))
+	if a.main.call != nil {
+		t.Fatal("Ctrl+X didn't hang up")
 	}
 }
 

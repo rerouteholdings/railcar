@@ -933,6 +933,8 @@ func (m *mainView) keyPress(a *App, msg tea.KeyPressMsg) tea.Cmd {
 		return m.openAddContact(a, "")
 	case key.Matches(msg, k.Attach):
 		return m.openAttach(a)
+	case key.Matches(msg, k.Answer, k.HangUp, k.Mute):
+		return m.callKey(a, msg)
 	}
 
 	if m.focus == focusComposer {
@@ -1552,7 +1554,7 @@ func voiceView(a *App, c Chat, w, h int) string {
 	var lines []string
 	if in {
 		lines = append(lines, t.bold.Render("You're in this voice channel."), "",
-			t.muted.Width(w-4).Render("Type :mute, :deafen, or :leave-voice. The bar at the bottom shows who's speaking."))
+			t.muted.Width(w-4).Render("Press Ctrl+R to mute or unmute, and Ctrl+X to leave, or type :deafen. The bar at the bottom shows who's speaking."))
 	} else {
 		lines = append(lines, t.bold.Render("A voice channel"), "",
 			t.muted.Width(w-4).Render("Type :join-voice to join it with your microphone and speakers."))

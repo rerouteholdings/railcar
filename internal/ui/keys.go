@@ -20,6 +20,11 @@ type keyMap struct {
 	AddContact key.Binding
 	Attach     key.Binding
 
+	// Calls and voice channels.
+	Answer key.Binding
+	HangUp key.Binding
+	Mute   key.Binding
+
 	// A contact request.
 	Accept  key.Binding
 	Decline key.Binding
@@ -61,6 +66,10 @@ func newKeyMap() keyMap {
 		AddContact: b([]string{"ctrl+n"}, "ctrl+n", "add a contact"),
 		Attach:     b([]string{"ctrl+a"}, "ctrl+a", "send a file"),
 
+		Answer: b([]string{"ctrl+y"}, "ctrl+y", "answer a call"),
+		HangUp: b([]string{"ctrl+x"}, "ctrl+x", "hang up, decline, or leave voice"),
+		Mute:   b([]string{"ctrl+r"}, "ctrl+r", "mute or unmute"),
+
 		Accept:  b([]string{"a"}, "a", "accept request"),
 		Decline: b([]string{"d"}, "d", "decline request"),
 
@@ -99,5 +108,6 @@ func (k keyMap) fullHelp() [][]key.Binding {
 		{k.Up, k.Down, k.Open, k.ChatsFind, k.AddContact, k.Accept, k.Decline},
 		{k.PageUp, k.PageDown, k.Top, k.Bottom, k.Reply, k.EditLast},
 		{k.Send, k.Newline, k.Attach, k.Details, k.Palette, k.Command, k.Help, k.Quit},
+		{k.Answer, k.HangUp, k.Mute},
 	}
 }
