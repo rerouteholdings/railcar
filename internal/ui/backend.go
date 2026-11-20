@@ -195,6 +195,11 @@ type Backend interface {
 //   - Read receipts (§13.3): read-receipts, whether to send them in the
 //     open chat, and ask-receipts, whether your messages ask for them
 //     (Arg: on or off).
+//   - Calls (§15.2): call, which calls the open chat, answer,
+//     decline-call, hangup, mute, unmute, deafen, undeafen, and
+//     direct-calls (Arg: on or off).
+//   - Voice channels (§16.4): join-voice, which joins the open voice
+//     channel, and leave-voice; mute and deafen work there too.
 type Action struct {
 	Kind string
 	Arg  string
@@ -485,7 +490,7 @@ type Draft struct {
 
 // Event is something that happened in the backend. It's one of
 // StreamChanged, ChatChanged, ChatRemoved, MessageAdded, MessageChanged,
-// Typing, or SignedOut.
+// Typing, IdentityChanged, CallChanged, or SignedOut.
 type Event interface{ event() }
 
 // StreamChanged reports a new stream state. Err is why the stream is offline

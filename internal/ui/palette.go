@@ -119,6 +119,7 @@ func newCommandPalette(a *App, m *mainView) *commandPalette {
 	if c, ok := m.activeChat(); ok && c.Kind == GroupChat {
 		cmds = append(groupCommands(), cmds...)
 	}
+	cmds = append(callCommands(m), cmds...)
 	if c, ok := m.activeChat(); ok && (c.Kind == GroupChat || c.Kind == DirectChat) {
 		cmds = append([]command{argCommand("Send read receipts in this chat: on or off", "receipts", "read-receipts", "on or off", false)}, cmds...)
 	}

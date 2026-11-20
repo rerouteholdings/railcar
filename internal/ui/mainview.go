@@ -78,6 +78,9 @@ type layout struct {
 // mainView is the chat list, the message view, the composer, and the
 // details pane, with the status bar under them.
 type mainView struct {
+	// call is the call bar's call or voice channel, or nil.
+	call *CallBar
+
 	// lastInput is the last key or click, for auto-away (§13.2), and
 	// awayBusy is set while a change of it is on its way.
 	lastInput time.Time
@@ -265,6 +268,9 @@ func (m *mainView) markRead(a *App, chat string) tea.Cmd {
 // computeLayout places the panes for the current size.
 func (m *mainView) computeLayout(a *App) layout {
 	w, h := a.width, max(3, a.height-1)
+	if m.call != nil {
+		h = max(3, h-1) // the call bar
+	}
 	var l layout
 	if w < narrowWidth {
 		l.narrow = true
@@ -684,6 +690,8 @@ func (m *mainView) handleEvent(a *App, e Event) tea.Cmd {
 			m.refresh(a, e.Message.Mine)
 		}
 		return m.mentionNotice(a, e.Message)
+	case CallChanged:
+		return m.callChanged(a, e.Bar)
 	case MessageChanged:
 		m.upsert(e.Message, true)
 		if e.Message.Chat == m.active {
@@ -1119,6 +1127,9 @@ func (m *mainView) view(a *App) string {
 	}
 	body := lipgloss.JoinHorizontal(lipgloss.Top, panes...)
 	screen := lipgloss.JoinVertical(lipgloss.Left, body, m.statusBar(a))
+	if m.call != nil {
+		screen = lipgloss.JoinVertical(lipgloss.Left, body, m.callBarView(a), m.statusBar(a))
+	}
 
 	switch m.overlay {
 	case overlayHelp:
@@ -1524,12 +1535,19 @@ func overlayOn(base, box string, w, h int) string {
 	return canvas.Render()
 }
 
-// voiceView fills the conversation pane for a voice channel: who's in it.
-// Railcar can't join voice channels.
+// voiceView fills the conversation pane for a voice channel: who's in it,
+// and how to join.
 func voiceView(a *App, c Chat, w, h int) string {
 	t := a.theme
-	lines := []string{t.bold.Render("Railcar can't join voice channels."), "",
-		t.muted.Width(w - 4).Render("Voice needs audio, which a terminal doesn't have. Join it from Reroute, or another Tieroute client with voice.")}
+	in := a.main.call != nil && a.main.call.Voice && a.main.call.Chat == c.ID
+	var lines []string
+	if in {
+		lines = append(lines, t.bold.Render("You're in this voice channel."), "",
+			t.muted.Width(w-4).Render("Type :mute, :deafen, or :leave-voice. The bar at the bottom shows who's speaking."))
+	} else {
+		lines = append(lines, t.bold.Render("A voice channel"), "",
+			t.muted.Width(w-4).Render("Type :join-voice to join it with your microphone and speakers."))
+	}
 	if len(c.InVoice) > 0 {
 		lines = append(lines, "", t.dim.Render("In the channel now"))
 		for _, mb := range c.InVoice {

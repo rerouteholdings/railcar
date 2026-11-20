@@ -130,6 +130,12 @@ func act(ctx context.Context, eng *chat.Engine, chatID string, a ui.Action) (str
 	if msg, ok, err := actBackup(ctx, eng, a); ok {
 		return msg, err
 	}
+	if msg, ok, err := actCalls(ctx, eng, chatID, a); ok {
+		if err != nil {
+			return "", err
+		}
+		return msg, nil
+	}
 	if a.Kind == "move" {
 		if a.Arg == "" || a.Arg2 == "" {
 			return "", errors.New("type :move, the new homeserver, your name there, and its registration code if it needs one")

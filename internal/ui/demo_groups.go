@@ -74,6 +74,9 @@ func (d *DemoBackend) Act(_ context.Context, chat string, a Action) (string, err
 	if line, ok := d.actPeople(a); ok {
 		return line, nil
 	}
+	if line, ok, err := d.actCalls(chat, a); ok {
+		return line, err
+	}
 	if c != nil && (a.Kind == "attach" || a.Kind == "save") {
 		return d.actFiles(c, a)
 	}

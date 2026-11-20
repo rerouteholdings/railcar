@@ -53,6 +53,10 @@ type DemoBackend struct {
 	approving    string
 	approvePolls int
 	devices      []Device
+
+	// call is the demo's call or voice channel.
+	call *demoCall
+	rang bool
 }
 
 // The words the demo draws recovery codes from. They're from the BIP-39
@@ -334,6 +338,10 @@ func (d *DemoBackend) Connect(context.Context) error {
 			}
 			d.mu.Lock()
 			d.emit(StreamChanged{State: StreamConnected})
+			if !d.rang {
+				d.rang = true
+				d.ringLater()
+			}
 			d.mu.Unlock()
 			select {
 			case <-time.After(3 * time.Minute):

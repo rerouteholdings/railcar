@@ -46,7 +46,7 @@ func TestCommunityChannels(t *testing.T) {
 		t.Fatalf("#general:\n%s", out)
 	}
 	drive(a, b, a.main.openChat(a, "c-lounge", false))
-	if out := plain(a); !strings.Contains(out, "Railcar can't join voice channels.") || !strings.Contains(out, "@ravi.chat.example.com") {
+	if out := plain(a); !strings.Contains(out, "Type :join-voice") || !strings.Contains(out, "@ravi.chat.example.com") {
 		t.Fatalf("the voice channel:\n%s", out)
 	}
 	// Folding the community hides its channels.
