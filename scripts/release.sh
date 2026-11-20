@@ -85,13 +85,17 @@ build_linux() { # arch
   src=$(source_for "linux-$arch")
   echo "==> linux-$arch, in $GO_IMAGE on $DOCKER_CONTEXT"
   docker --context "$DOCKER_CONTEXT" run --rm --platform "linux/$arch" \
-    -v "$src:/src" -v "$STAGE:/out" -w /src -e LDFLAGS="$LDFLAGS" -e ARCH="$arch" "$GO_IMAGE" bash -ec '
+    -v "$src:/src" -v "$STAGE:/out" -w /src -e GO_LDFLAGS="$LDFLAGS" -e ARCH="$arch" "$GO_IMAGE" bash -ec '
       apt-get update -qq && apt-get install -y -qq curl build-essential >/dev/null
-      curl -sSf https://sh.rustup.rs | sh -s -- -y -q --profile minimal >/dev/null
+      # rustup-init for this architecture, rather than sh.rustup.rs, whose
+      # architecture check fails under emulation.
+      case $ARCH in amd64) rt=x86_64-unknown-linux-gnu ;; arm64) rt=aarch64-unknown-linux-gnu ;; esac
+      curl -sSf -o /tmp/rustup-init "https://static.rust-lang.org/rustup/dist/$rt/rustup-init"
+      chmod +x /tmp/rustup-init && /tmp/rustup-init -y -q --profile minimal >/dev/null
       . "$HOME/.cargo/env"
       (cd mls && cargo build --release --locked --quiet)
       scripts/build-opus.sh >/dev/null 2>/tmp/opus.log || { cat /tmp/opus.log >&2; exit 1; }
-      CGO_ENABLED=1 go build -buildvcs=false -trimpath -ldflags "$LDFLAGS" -o /out/railcar-linux-$ARCH ./cmd/railcar'
+      CGO_ENABLED=1 go build -buildvcs=false -trimpath -ldflags "$GO_LDFLAGS" -o /out/railcar-linux-$ARCH ./cmd/railcar'
 }
 
 docker_ok() { command -v docker >/dev/null && docker --context "$DOCKER_CONTEXT" info >/dev/null 2>&1; }
