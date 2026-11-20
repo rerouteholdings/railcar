@@ -337,6 +337,71 @@ func (cm *Community) Append(ctx context.Context, entry wire.Signed) (*AppendResu
 	return &r, err
 }
 
+// AppendSetHome appends a set-home naming another community server, with
+// that server's reservation (POST chain/append, §16.6). The answer holds
+// each text channel's last sequence number.
+func (cm *Community) AppendSetHome(ctx context.Context, entry, reservation wire.Signed) (*AppendResult, error) {
+	var r AppendResult
+	err := cm.authed(ctx, http.MethodPost, "chain/append", nil, map[string]any{"entry": entry, "reservation": reservation}, &r)
+	return &r, err
+}
+
+// Move describes a community moving to this server (POST create with
+// chain, §16.6): the whole chain, ending in the set-home that names this
+// server, the homes of its signers, and the owner's signed member list.
+type Move struct {
+	Chain   []wire.Signed
+	Homes   map[string]string
+	Members wire.Signed
+	Seqs    []ChannelSeq // from the set-home's append; none for a check
+	Code    string       // the operator's creation code, if the server needs one
+}
+
+func (m Move) req() map[string]any {
+	req := map[string]any{"chain": m.Chain, "members": m.Members}
+	if len(m.Homes) > 0 {
+		req["homes"] = m.Homes
+	}
+	if len(m.Seqs) > 0 {
+		req["seqs"] = m.Seqs
+	}
+	if m.Code != "" {
+		req["code"] = m.Code
+	}
+	return req
+}
+
+// CheckMove asks this server whether it would take a community moving in,
+// and returns its signed reservation (POST create with check, §16.6).
+// It stores nothing but a hold.
+func (cm *Community) CheckMove(ctx context.Context, m Move) (wire.Signed, error) {
+	req := m.req()
+	delete(req, "seqs")
+	req["check"] = true
+	var res struct {
+		Reservation *wire.Signed `json:"reservation"`
+	}
+	if err := cm.authed(ctx, http.MethodPost, "create", nil, req, &res); err != nil {
+		return wire.Signed{}, err
+	}
+	if res.Reservation == nil {
+		return wire.Signed{}, errors.New("client: the community server checked the move without a reservation")
+	}
+	return *res.Reservation, nil
+}
+
+// MoveIn moves a community to this server (POST create with chain). The
+// owner then hands each group's hub over (§11.11).
+func (cm *Community) MoveIn(ctx context.Context, m Move) error {
+	if err := cm.authed(ctx, http.MethodPost, "create", nil, m.req(), nil); err != nil {
+		return err
+	}
+	cm.mu.Lock()
+	cm.member = true
+	cm.mu.Unlock()
+	return nil
+}
+
 // MemberChain fetches a member's or former member's identity chain as the
 // community server last fetched it (GET members/{id}/chain). The caller
 // validates it, as any chain.

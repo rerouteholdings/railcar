@@ -385,6 +385,17 @@ func act(ctx context.Context, eng *chat.Engine, chatID string, a ui.Action) (str
 			mins = 10
 		}
 		return fmt.Sprintf("Timed out %s for %d minutes", a.Arg, mins), eng.Timeout(ctx, server, id, time.Duration(mins)*time.Minute)
+	case "move-community":
+		if err := needCommunity(); err != nil {
+			return "", err
+		}
+		if a.Arg == "" {
+			return "", errors.New("type :move-community, the new community server, and its creation code if it needs one")
+		}
+		if err := eng.MoveCommunity(ctx, server, a.Arg, a.Arg2); err != nil {
+			return "", err
+		}
+		return "The community moved to " + a.Arg + ". Members follow it there", nil
 	case "leave-community":
 		return "You left the community", eng.LeaveCommunity(ctx, server)
 	}

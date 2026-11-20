@@ -693,6 +693,10 @@ type ccommitOpts struct {
 	ext      *GroupExt    // a new tieroute_group, or nil to keep it
 	pin      bool         // set community_head in a restricted group
 	required []uint16     // required_capabilities, when the extensions change
+	// handoff is the community server a hub handoff registers the group
+	// with, at the epoch the commit creates, before the old hub
+	// sequences it (§11.11, §16.6).
+	handoff string
 }
 
 // ccommit makes a commit to a community group, sends it to the community
@@ -779,6 +783,18 @@ func (e *Engine) ccommit(ctx context.Context, cm *Community, g *CGroup, o ccommi
 	if err != nil {
 		clear()
 		return err
+	}
+	if o.handoff != "" {
+		to := e.c.Community(o.handoff)
+		th, err := to.UploadTree(ctx, tree)
+		if err == nil {
+			reg := client.GroupReg{Group: gid, Epoch: res.Epoch + 1, EpochKey: nextKey.Public(), Info: res.GroupInfo, Tree: th}
+			err = to.CreateGroup(ctx, reg, g.See, nil)
+		}
+		if err != nil {
+			clear()
+			return fmt.Errorf("chat: registering the group with %s: %w", o.handoff, err)
+		}
 	}
 	out := client.CommunityOutgoing{ID: client.NewMsgID(), Kind: "mls", Group: gid, Epoch: res.Epoch, MLS: "commit",
 		Data: res.Commit, Commit: &req, Info: res.GroupInfo, Tree: treeHash}
