@@ -114,6 +114,10 @@ func (e *Engine) fetchMissed(ctx context.Context, ch *Chat) {
 		after = ch.Epoch - 1
 	}
 	commits, err := e.c.FetchCommits(ctx, ch.ID, after, hub)
+	if expired(err) {
+		// The hub no longer has what this device missed (§11.9).
+		e.rejoinDue = true
+	}
 	if err != nil {
 		e.log.Info("chat: fetching missed commits", "err", err)
 		return
@@ -148,6 +152,7 @@ func (e *Engine) catchUpGroups(ctx context.Context) {
 			e.log.Info("chat: catching up", "err", err)
 		}
 	}
+	e.rejoinIfDue(ctx)
 }
 
 // oldCommit handles a commit for an epoch this device already left: its

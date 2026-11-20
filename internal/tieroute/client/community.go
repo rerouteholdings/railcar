@@ -676,6 +676,7 @@ func (s communityStream) cursor() string                   { return s.cm.Cursor(
 func (s communityStream) http() *http.Client               { return s.cm.c.opts.httpClient() }
 func (s communityStream) what() string                     { return "community server" }
 func (s communityStream) restarted() <-chan struct{}       { return nil }
+func (s communityStream) rotating() bool                   { return false }
 
 // ChannelItem is one stored channel message, or a deleted one's place.
 type ChannelItem struct {

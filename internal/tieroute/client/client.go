@@ -6,7 +6,6 @@ package client
 
 import (
 	"context"
-	"crypto/ed25519"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -75,6 +74,7 @@ type savedState struct {
 	PendingWrap  *WrappedKey   `json:"pending_wrap,omitempty"` // a recovery wrap the homeserver hasn't taken yet
 	LinkKey      wire.Bytes    `json:"link_key,omitempty"`     // a linked device's HPKE private key, until its link bundle opens
 	Move         *PendingMove  `json:"move,omitempty"`         // a move to another homeserver this device hasn't finished (§6.6)
+	Rotating     *savedDevice  `json:"rotating,omitempty"`     // the next device key, while a self-rotation is under way (§11.9)
 }
 
 // Client is a signed-up identity on this device. Its methods are safe for
@@ -146,28 +146,25 @@ func Open(profileDir string, opts Options) (*Client, error) {
 }
 
 func (c *Client) load(st savedState) error {
-	key, err := sig.NewCompositeKey(st.Device.MLDSASeed, st.Device.EdSeed)
+	dev, err := loadDevice(st.Device)
 	if err != nil {
-		return fmt.Errorf("client: stored device key: %w", err)
+		return err
 	}
-	if len(st.Device.MsgSeed) != ed25519.SeedSize {
-		return errors.New("client: stored message key is damaged")
-	}
-	dev := &identity.Device{Key: key, Name: st.Device.Name, MsgKey: ed25519.NewKeyFromSeed(st.Device.MsgSeed), MsgN: st.Device.MsgN}
 	chain, err := identity.Validate(st.Chain, identity.Options{})
 	if err != nil {
 		return fmt.Errorf("client: stored chain: %w", err)
 	}
 	c.state, c.device, c.chain = st, dev, chain
 	c.resolver.Self = st.Server
+	// A self-rotation that stopped after its append finishes here.
+	c.promoteRotation()
 	return nil
 }
 
 // saveLocked writes the main record. The caller holds c.mu.
 func (c *Client) saveLocked() error {
 	c.state.Chain = c.chain.Entries
-	ms, es := c.device.Key.Seeds()
-	c.state.Device = savedDevice{MLDSASeed: ms, EdSeed: es, Name: c.device.Name, MsgSeed: c.device.MsgKey.Seed(), MsgN: c.device.MsgN}
+	c.state.Device = saveDevice(c.device)
 	return c.profile.Save(recState, c.state)
 }
 

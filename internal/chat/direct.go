@@ -357,13 +357,17 @@ func (e *Engine) checkReceiptFrom(ctx context.Context, hub string, r wire.Signed
 // The caller holds e.mu.
 func (e *Engine) welcome(ctx context.Context, d *client.Delivery) error {
 	me := e.c.ID()
-	if d.From != me {
+	old := e.st.Chats[d.Group]
+	back := old != nil && old.Rejoining
+	if d.From != me && !(back && slices.Contains(old.Members, d.From)) {
+		// A member of a chat this device is coming back to may add it
+		// again, contact or not (§11.9).
 		c := e.st.Contacts[d.From]
 		if c == nil || (c.State != StateContact && c.State != StatePendingOut) {
 			return fmt.Errorf("chat: a Welcome from %s, who isn't a contact", d.From)
 		}
 	}
-	if _, ok := e.st.Chats[d.Group]; ok {
+	if old != nil && !back {
 		return nil // already in it
 	}
 	g, res, err := e.dev.mls.JoinWelcome(d.Data, nil, chatConfig)
@@ -456,6 +460,7 @@ func (e *Engine) welcome(ctx context.Context, d *client.Delivery) error {
 		e.log.Info("chat: registering the group", "err", err)
 	}
 	ch := &Chat{ID: d.Group, Kind: KindDirect, Hub: ext.Hub, Peer: peer, Members: []string{me, peer}, Epoch: st.Epoch}
+	e.rejoinedChat(old, ch)
 	e.adoptDirect(ch)
 	if err := e.save(); err != nil {
 		return err
@@ -508,6 +513,7 @@ func (e *Engine) joinGroup(ctx context.Context, g *mls.Group, d *client.Delivery
 	ch := &Chat{ID: d.Group, Kind: KindGroup, Hub: ext.Hub, Members: members(st), Admins: slices.Clone(ext.Admins), Epoch: st.Epoch}
 	if old, ok := e.st.Chats[d.Group]; ok {
 		ch.Name, ch.Topic, ch.LastActivity, ch.Preview, ch.Unread = old.Name, old.Topic, old.LastActivity, old.Preview, old.Unread
+		e.rejoinedChat(old, ch)
 	}
 	ch.LastActivity = max(ch.LastActivity, e.c.Clock().Now().Unix())
 	e.st.Chats[ch.ID] = ch

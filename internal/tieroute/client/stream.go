@@ -123,6 +123,9 @@ type streamSource interface {
 	// restarted closes when the stream has to start again elsewhere,
 	// with the cursor it has then; nil never closes.
 	restarted() <-chan struct{}
+	// rotating reports a self-rotation under way, which closes the old
+	// device's stream (§11.9).
+	rotating() bool
 }
 
 // homeStream is the homeserver's stream.
@@ -151,6 +154,11 @@ func (h homeStream) cursor() string                   { return h.c.Cursor() }
 func (h homeStream) http() *http.Client               { return h.c.opts.httpClient() }
 func (h homeStream) what() string                     { return "homeserver" }
 func (h homeStream) restarted() <-chan struct{}       { return h.c.Restarted() }
+func (h homeStream) rotating() bool {
+	h.c.mu.Lock()
+	defer h.c.mu.Unlock()
+	return h.c.state.Rotating != nil
+}
 
 type streamStop struct{ err error }
 
@@ -200,8 +208,12 @@ func runStream(ctx context.Context, src streamSource, opts StreamOptions, ch cha
 		}
 		switch websocket.CloseStatus(err) {
 		case closeNotAllowed:
-			send(Event{Kind: EventStopped, Err: ErrDeviceRemoved})
-			return
+			if !src.rotating() {
+				send(Event{Kind: EventStopped, Err: ErrDeviceRemoved})
+				return
+			}
+			// The old key's stream, closed by this device's own
+			// self-rotation: connect again once it has the new key.
 		case closeUnauthenticated:
 			// The token may have expired: sign in once, then give up if
 			// the server still refuses it. No backoff for the first try.

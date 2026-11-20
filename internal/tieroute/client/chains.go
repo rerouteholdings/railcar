@@ -112,7 +112,7 @@ func (c *Client) acceptChain(id string, entries []wire.Signed) (*identity.Chain,
 		c.mu.Lock()
 		defer c.mu.Unlock()
 		c.chain = cmp.Chain
-		if !c.chain.State.IsDevice(c.device.ID()) {
+		if !c.chain.State.IsDevice(c.device.ID()) && !c.promoteRotation() {
 			// Keep the chain: it's how the interface shows why.
 			_ = c.saveLocked()
 			return cmp.Chain, ErrDeviceRemoved

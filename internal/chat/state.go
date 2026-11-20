@@ -4,6 +4,7 @@ import (
 	"errors"
 	"slices"
 	"strings"
+	"time"
 
 	"github.com/rerouteholdings/railcar/internal/tieroute/client"
 	"github.com/rerouteholdings/railcar/internal/tieroute/store"
@@ -92,6 +93,9 @@ type Chat struct {
 	// Hold is set while a removed device still has a leaf here: nothing
 	// but the Remove is sent until it lands (§11.9).
 	Hold bool `json:"hold,omitempty"`
+	// Rejoining is set while this device, back as a new device, waits for
+	// a member to add it again (§11.9).
+	Rejoining bool `json:"rejoining,omitempty"`
 
 	Unread       int    `json:"unread"`
 	LastActivity int64  `json:"last_activity"`
@@ -216,6 +220,9 @@ type state struct {
 	// channels. Empty is the system's default.
 	Microphone string `json:"microphone,omitempty"`
 	Speakers   string `json:"speakers,omitempty"`
+	// LastRejoin is when this device last came back as a new device
+	// (§11.9).
+	LastRejoin time.Time `json:"last_rejoin,omitzero"`
 }
 
 func loadState(p *store.Profile) (*state, error) {

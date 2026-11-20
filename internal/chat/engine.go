@@ -94,6 +94,9 @@ type Engine struct {
 	dev *Device
 	log *slog.Logger
 	key ed25519.PrivateKey // the message key, which signs app-messages (§3.2.3)
+	// rejoinDue is set when a hub no longer has commits this device
+	// missed, so it comes back as a new device (§11.9).
+	rejoinDue bool
 
 	// mu serializes everything that touches the MLS state or the records:
 	// processing the inbox, sending, and creating chats.
@@ -268,6 +271,12 @@ func (e *Engine) Run(ctx context.Context) error {
 		switch ev.Kind {
 		case client.EventConnected:
 			e.emit(Event{Kind: EventStream, Stream: ev.Kind})
+			if ev.Gap {
+				// Items expired before this device acked them (§11.9).
+				e.mu.Lock()
+				e.maybeRejoin(ctx, "an inbox gap")
+				e.mu.Unlock()
+			}
 			go e.catchUpGroups(ctx)
 			go func() {
 				e.announcePresence(ctx)
@@ -305,6 +314,12 @@ func (e *Engine) syncHome(ctx context.Context) error {
 		page, err := e.c.Inbox(ctx, e.c.Cursor(), 0)
 		if err != nil {
 			return err
+		}
+		if page.Gap {
+			// Items expired before this device acked them (§11.9).
+			e.mu.Lock()
+			e.maybeRejoin(ctx, "an inbox gap")
+			e.mu.Unlock()
 		}
 		if len(page.Items) == 0 {
 			return nil
