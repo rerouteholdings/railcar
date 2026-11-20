@@ -39,6 +39,21 @@ type vectorFile struct {
 			Salt       string `json:"sframe_salt_hex"`
 		} `json:"cases"`
 	} `json:"tieroute"`
+	Voice struct {
+		BaseKey string `json:"base_key_hex"`
+		Cases   []struct {
+			Visit      uint32 `json:"visit"`
+			Gen        uint8  `json:"generation"`
+			Stream     uint8  `json:"stream"`
+			KID        uint64 `json:"kid"`
+			CTR        uint64 `json:"ctr"`
+			Header     string `json:"header_hex"`
+			Plaintext  string `json:"plaintext"`
+			Ciphertext string `json:"ciphertext_hex"`
+			Key        string `json:"sframe_key_hex"`
+			Salt       string `json:"sframe_salt_hex"`
+		} `json:"cases"`
+	} `json:"voice"`
 }
 
 func unhex(t *testing.T, s string) []byte {
@@ -126,8 +141,28 @@ func TestVectorTieroute(t *testing.T) {
 	}
 }
 
-func TestVoiceKID(t *testing.T) {
-	if VoiceKID(0x01020304, 5) != 0x0102030405 {
-		t.Fatal("voice kid")
+func TestVectorVoice(t *testing.T) {
+	v := load(t).Voice
+	if len(v.Cases) == 0 {
+		t.Fatal("no voice channel cases")
+	}
+	base := unhex(t, v.BaseKey)
+	for _, c := range v.Cases {
+		kid := VoiceKID(c.Visit, c.Gen, c.Stream)
+		if kid != c.KID {
+			t.Errorf("kid %x, want %x", kid, c.KID)
+		}
+		if vi, g, st := SplitVoiceKID(kid); vi != c.Visit || g != c.Gen || st != c.Stream {
+			t.Errorf("kid %x splits into %x %d %d", kid, vi, g, st)
+		}
+		key, salt, _ := DeriveBytes(base, kid)
+		if hex.EncodeToString(key) != c.Key || hex.EncodeToString(salt) != c.Salt {
+			t.Errorf("kid %x: key %x salt %x", kid, key, salt)
+		}
+		k, _ := Derive(base, kid)
+		ct := k.Seal(kid, c.CTR, nil, []byte(c.Plaintext))
+		if hex.EncodeToString(ct) != c.Ciphertext || !bytes.HasPrefix(ct, unhex(t, c.Header)) {
+			t.Errorf("kid %x: ciphertext %x", kid, ct)
+		}
 	}
 }

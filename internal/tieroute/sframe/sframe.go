@@ -31,10 +31,24 @@ func CallKID(leafIndex uint32, epoch uint64) uint64 {
 	return uint64(leafIndex)<<4 + epoch%16
 }
 
-// VoiceKID is a voice channel's key ID: the visit ID followed by an 8-bit
-// generation (§16.4).
-func VoiceKID(visit uint32, gen uint8) uint64 {
-	return uint64(visit)<<8 | uint64(gen)
+// The streams of a voice channel visit, named by a KID's last byte
+// (§16.4, "Streams in a voice channel").
+const (
+	StreamVoice     uint8 = 0
+	StreamCastAudio uint8 = 1
+	StreamCastVideo uint8 = 2
+)
+
+// VoiceKID is a voice channel's key ID: the visit ID, an 8-bit
+// generation, and a byte naming the stream, 6 bytes in all (§16.4).
+func VoiceKID(visit uint32, gen, stream uint8) uint64 {
+	return uint64(visit)<<16 | uint64(gen)<<8 | uint64(stream)
+}
+
+// SplitVoiceKID gives a voice channel KID's visit ID, generation, and
+// stream.
+func SplitVoiceKID(kid uint64) (visit uint32, gen, stream uint8) {
+	return uint32(kid >> 16), uint8(kid >> 8), uint8(kid)
 }
 
 // Key is the key and salt for one KID (RFC 9605 §4.4.2).

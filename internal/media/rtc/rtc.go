@@ -91,6 +91,14 @@ type Keyring interface {
 	Key(kid uint64) (stream string, key *sframe.Key, ok bool)
 }
 
+// KindKeyring is a Keyring whose KIDs say which kind of stream each frame
+// is, "voice", "cast", or "video", as a voice channel's do (§16.4). Media
+// then goes by that, not by the media section.
+type KindKeyring interface {
+	Keyring
+	Kind(kid uint64) string
+}
+
 // Media is one device's side of a call or a voice channel: the audio it
 // sends, and the audio it hears from everyone.
 type Media struct {
@@ -212,6 +220,12 @@ func (m *Media) Receive(t *webrtc.TrackRemote, kind string) {
 		frame, err := key.Open(p.Payload, ctr, n, nil)
 		if err != nil {
 			continue
+		}
+		kind := kind
+		if kk, ok := m.keys.(KindKeyring); ok {
+			if kind = kk.Kind(kid); kind == "video" {
+				continue // a terminal can't show video
+			}
 		}
 		id := stream + "/" + kind + "/" + ssrc + "/" + strconv.FormatUint(kid, 16)
 		m.mu.Lock()

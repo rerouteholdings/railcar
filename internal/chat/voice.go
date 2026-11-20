@@ -1,6 +1,7 @@
 package chat
 
 import (
+	"bytes"
 	"context"
 	"crypto/rand"
 	"encoding/binary"
@@ -72,11 +73,15 @@ type VoiceInfo struct {
 	Ended    string
 }
 
+// vkey is one generation of a visit's base key, kept by the visit ID and
+// generation; each stream's keys come from it (§16.4).
 type vkey struct {
-	id   string
-	key  *sframe.Key
-	at   time.Time
-	seen bool // a voice-state listed its visit
+	id    string
+	base  []byte
+	keys  map[uint8]*sframe.Key // by stream
+	at    time.Time
+	seen  bool      // a voice-state listed its visit
+	until time.Time // for a replaced generation: when it goes
 }
 
 type vstate struct {
@@ -506,8 +511,7 @@ func (v *voice) content(server string, channel uint64, from, t string, am AppMes
 }
 
 func (v *voice) takeKey(chat, from string, k VoiceKey) {
-	key, err := sframe.Derive(k.Key, sframe.VoiceKID(k.Visit, k.Gen))
-	if err != nil {
+	if len(k.Key) != 32 {
 		return
 	}
 	v.mu.Lock()
@@ -517,8 +521,11 @@ func (v *voice) takeKey(chat, from string, k VoiceKey) {
 		m = map[uint64]*vkey{}
 		v.keys[chat] = m
 	}
-	kid := sframe.VoiceKID(k.Visit, k.Gen)
-	vk := &vkey{id: from, key: key, at: time.Now()}
+	kid := uint64(k.Visit)<<8 | uint64(k.Gen)
+	if old := m[kid]; old != nil && bytes.Equal(old.base, k.Key) {
+		return // sent again for a newcomer
+	}
+	vk := &vkey{id: from, base: bytes.Clone(k.Key), keys: map[uint8]*sframe.Key{}, at: time.Now()}
 	for _, s := range v.states[chat] {
 		if s.Visit == k.Visit {
 			if s.ID != from {
@@ -528,10 +535,11 @@ func (v *voice) takeKey(chat, from string, k VoiceKey) {
 		}
 	}
 	m[kid] = vk
-	// An older generation of the same visit isn't needed.
-	for old := range m {
-		if old>>8 == kid>>8 && old < kid {
-			delete(m, old)
+	// An older generation of the same visit is kept 10 seconds, for frames
+	// in flight, as in calls (§15.2, §16.4).
+	for old, ok := range m {
+		if old>>8 == kid>>8 && old < kid && ok.until.IsZero() {
+			ok.until = time.Now().Add(oldKeysFor)
 		}
 	}
 }
@@ -662,7 +670,7 @@ func (v *voice) handleFrame(server, t string, channel uint64, vis uint32, sdp, d
 			v.fail(c, "Your voice key couldn't be sent: "+err.Error())
 			return
 		}
-		s, err := sframe.NewSender(c.base, sframe.VoiceKID(c.visit, c.gen))
+		s, err := sframe.NewSender(c.base, sframe.VoiceKID(c.visit, c.gen, sframe.StreamVoice))
 		if err != nil {
 			return
 		}
@@ -784,11 +792,41 @@ type voiceRing struct {
 }
 
 func (r voiceRing) Key(kid uint64) (string, *sframe.Key, bool) {
+	visit, gen, stream := sframe.SplitVoiceKID(kid)
+	if stream > sframe.StreamCastVideo {
+		return "", nil, false // a stream byte this version doesn't know: dropped
+	}
 	r.v.mu.Lock()
 	defer r.v.mu.Unlock()
-	k := r.v.keys[r.chat][kid]
+	m := r.v.keys[r.chat]
+	at := uint64(visit)<<8 | uint64(gen)
+	k := m[at]
 	if k == nil {
 		return "", nil, false
 	}
-	return k.id, k.key, true
+	if !k.until.IsZero() && time.Now().After(k.until) {
+		delete(m, at)
+		return "", nil, false
+	}
+	key := k.keys[stream]
+	if key == nil {
+		var err error
+		if key, err = sframe.Derive(k.base, kid); err != nil {
+			return "", nil, false
+		}
+		k.keys[stream] = key
+	}
+	return k.id, key, true
+}
+
+// Kind says which stream a voice channel frame is, from its KID's last
+// byte, since the forwarding unit's media sections don't say (§16.4).
+func (r voiceRing) Kind(kid uint64) string {
+	switch _, _, stream := sframe.SplitVoiceKID(kid); stream {
+	case sframe.StreamCastAudio:
+		return "cast"
+	case sframe.StreamCastVideo:
+		return "video"
+	}
+	return "voice"
 }
