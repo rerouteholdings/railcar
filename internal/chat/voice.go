@@ -70,8 +70,10 @@ type VoiceInfo struct {
 	Deafened bool
 	Level    float64
 	People   []VoicePerson
-	Relay    bool
-	Ended    string
+	// Relay says whether the homeserver's relay is offered for the
+	// connection to the forwarding unit. Without one, it's direct.
+	Relay bool
+	Ended string
 }
 
 // vkey is one generation of a visit's base key, kept by the visit ID and
@@ -281,20 +283,19 @@ func (v *voice) join(chat string) error {
 		c = &visit{server: server, chat: chat, channel: channel}
 	}
 	c.ended, c.joined = "", false
-	c.opts = rtc.Options{Loopback: v.opts.Loopback, RelayOnly: !e.DirectCalls()}
+	// The relay-only setting is for calls: media here goes only to the
+	// community server, which sees this device's address on its stream
+	// anyway (§15.2, "Relays"). The homeserver's relay is used when it has
+	// one, and the device connects directly when it doesn't.
+	c.opts = rtc.Options{Loopback: v.opts.Loopback}
 	tctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	relay, terr := e.c.Turn(tctx)
 	cancel()
 	c.relay.set(relay)
-	switch {
-	case terr == nil:
+	if terr == nil {
 		c.opts.ICEServers = iceServers(relay)
-	case c.opts.RelayOnly:
-		var we *wire.Error
-		if errors.As(terr, &we) && we.Code == "not-implemented" {
-			return errors.New("chat: your homeserver has no call relay, so the community server would see your IP address. Allow direct calls to join anyway")
-		}
-		return fmt.Errorf("chat: getting the call relay: %w", terr)
+	} else {
+		e.log.Debug("chat: no call relay for the voice channel, so connecting directly", "err", terr)
 	}
 	api, err := rtc.NewAPI(c.opts)
 	if err != nil {
@@ -755,7 +756,7 @@ func (v *voice) emit() {
 		v.e.emit(ev)
 		return
 	}
-	info := VoiceInfo{Chat: c.chat, Server: c.server, Channel: c.channel, Visit: c.visit, Joined: c.joined, Deafened: c.deafened, Relay: c.opts.RelayOnly, Ended: c.ended}
+	info := VoiceInfo{Chat: c.chat, Server: c.server, Channel: c.channel, Visit: c.visit, Joined: c.joined, Deafened: c.deafened, Relay: len(c.opts.ICEServers) > 0, Ended: c.ended}
 	var levels map[string]float64
 	if c.media != nil {
 		info.Muted, info.Level = c.media.Muted() || c.deafened, c.media.Level()

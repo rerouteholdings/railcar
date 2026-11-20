@@ -72,6 +72,11 @@ func TestE2ERailcarVoice(t *testing.T) {
 		t.Fatalf("Ravi's Lounge is %s, not %s", got, lounge)
 	}
 
+	// Relay-only calls don't cover voice channels: with no relay on this
+	// network, Kat still joins, directly (§15.2).
+	if err := kat.e.SetDirectCalls(false); err != nil {
+		t.Fatal(err)
+	}
 	if err := kat.e.JoinVoice(ctx, lounge); err != nil {
 		t.Fatal(err)
 	}

@@ -92,7 +92,7 @@ func actCalls(ctx context.Context, eng *chat.Engine, chatID string, a ui.Action)
 // device is in, or else its call.
 func callBar(eng *chat.Engine) *ui.CallBar {
 	if v, ok := eng.Voice(); ok {
-		b := &ui.CallBar{Voice: true, Chat: v.Chat, Phase: "active", Muted: v.Muted, Deafened: v.Deafened, Level: v.Level, Direct: !v.Relay}
+		b := &ui.CallBar{Voice: true, Chat: v.Chat, Phase: "active", Muted: v.Muted, Deafened: v.Deafened, Level: v.Level}
 		if !v.Joined {
 			b.Phase = "connecting"
 		}

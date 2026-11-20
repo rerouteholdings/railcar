@@ -486,7 +486,8 @@ func TestE2ECallsRelayOnly(t *testing.T) {
 		t.Errorf("Reroute heard %.3g of Railcar's 440 Hz", audio.Power(s, 440))
 	}
 
-	// A voice channel, reached through each homeserver's relay.
+	// A voice channel, with each homeserver's relay offered; the
+	// relay-only setting is for calls (§15.2).
 	if _, err := kat.e.CreateCommunity(ctx, "c.test", "Night shift", "", testnet.CommunityCode); err != nil {
 		t.Fatal(err)
 	}
@@ -510,7 +511,7 @@ func TestE2ECallsRelayOnly(t *testing.T) {
 	}
 	waitFor(t, "both keys", func() bool { return keyedOthers(kat.e) == 1 && keyedOthers(ravi.e) == 1 })
 	if !voiceOf(kat.e).Relay {
-		t.Error("the visit isn't relay-only")
+		t.Error("the visit wasn't offered the relay")
 	}
 	fetched = relayFetches.Load()
 	waitFor(t, "new relay credentials in the voice channel", func() bool { return relayFetches.Load() >= fetched+2 })
