@@ -14,6 +14,7 @@ import (
 
 	"github.com/rerouteholdings/railcar/internal/media/audio"
 	"github.com/rerouteholdings/railcar/internal/media/rtc"
+	"github.com/rerouteholdings/railcar/internal/tieroute/client"
 	"github.com/rerouteholdings/railcar/internal/tieroute/sframe"
 	"github.com/rerouteholdings/railcar/internal/tieroute/wire"
 )
@@ -183,6 +184,7 @@ type call struct {
 	cancel   context.CancelFunc
 	ctx      context.Context
 	deafened bool
+	relay    relayLease
 }
 
 // knownCall is a call going on in a chat, as far as this device saw.
@@ -404,7 +406,7 @@ func (cs *calls) newCall(chat string, id []byte, group bool) (*call, error) {
 	cancel()
 	switch {
 	case err == nil:
-		o.ICEServers = []webrtc.ICEServer{{URLs: relay.URLs, Username: relay.Username, Credential: relay.Credential}}
+		o.ICEServers = iceServers(relay)
 	case o.RelayOnly:
 		var we *wire.Error
 		if errors.As(err, &we) && we.Code == "not-implemented" {
@@ -422,6 +424,7 @@ func (cs *calls) newCall(chat string, id []byte, group bool) (*call, error) {
 	}
 	cctx, ccancel := context.WithCancel(context.Background())
 	c := &call{chat: chat, id: id, group: group, devs: map[string]*callDev{}, audio: aio, api: api, rtcOpts: o, ctx: cctx, cancel: ccancel}
+	c.relay.set(relay)
 	c.keys = &callKeys{e: e, chat: chat, call: id, old: map[uint64]oldKey{}}
 	if err := c.keys.refresh(); err != nil {
 		ccancel()
@@ -760,6 +763,9 @@ func (cs *calls) tick() {
 			c.keys.refresh()
 			c.media.SetSender(c.keys.sender())
 			cs.checkPeers(c)
+			if c.relay.due(now) {
+				cs.e.renewRelay(cs.do, func(r *client.Relay, err error) { cs.renewed(c, r, err) })
+			}
 			changed = true
 		}
 	}
@@ -770,6 +776,29 @@ func (cs *calls) tick() {
 	}
 	if changed {
 		cs.emitCall()
+	}
+}
+
+// renewed takes new relay credentials during a long call (client API,
+// "Call relays"). Connections to devices that join later use them, and so
+// does any connection that gathers candidates again.
+func (cs *calls) renewed(c *call, r *client.Relay, err error) {
+	if cs.active != c || c.phase == CallEnded {
+		return
+	}
+	if err != nil {
+		cs.e.log.Info("chat: renewing the call relay", "err", err)
+		c.relay.failed()
+		return
+	}
+	c.rtcOpts.ICEServers = iceServers(r)
+	c.relay.set(r)
+	for _, d := range c.devs {
+		if d.peer != nil {
+			if err := d.peer.PC.SetConfiguration(c.rtcOpts.Config()); err != nil {
+				cs.e.log.Info("chat: renewing the call relay", "err", err)
+			}
+		}
 	}
 }
 

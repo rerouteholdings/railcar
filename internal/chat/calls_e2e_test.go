@@ -396,8 +396,9 @@ func TestE2EInteropCalls(t *testing.T) {
 
 // TestE2ECallsRelayOnly calls with direct connections off, the default,
 // so media goes only through each homeserver's TURN relay (§15.1,
-// §15.2): Railcar to Railcar across two servers, then Railcar to Reroute.
-// It needs coturn.
+// §15.2): Railcar to Railcar across two servers, with new relay
+// credentials partway through, then Railcar to Reroute, then a voice
+// channel. It needs coturn.
 func TestE2ECallsRelayOnly(t *testing.T) {
 	bin := testnet.Rerouted(t)
 	o, relays := testnet.StartRelayed(t, bin, map[string]string{"c.test": "a.test"}, "a.test", "b.test")
@@ -410,6 +411,12 @@ func TestE2ECallsRelayOnly(t *testing.T) {
 		}
 	}
 	chat := callFriends(t, ctx, kat, ravi)
+	// Renew the relay credentials 3 seconds in, as a long call does
+	// before ttl runs out.
+	was := relayRefresh
+	relayRefresh = func(time.Duration) time.Duration { return 3 * time.Second }
+	t.Cleanup(func() { relayRefresh = was })
+	fetched := relayFetches.Load()
 	if err := kat.e.StartCall(ctx, chat); err != nil {
 		t.Fatal(err)
 	}
@@ -432,6 +439,9 @@ func TestE2ECallsRelayOnly(t *testing.T) {
 	time.Sleep(time.Second)
 	hears(t, "kat", kat.tone.record(2*time.Second), []float64{660}, 440)
 	hears(t, "ravi", ravi.tone.record(2*time.Second), []float64{440}, 660)
+	waitFor(t, "new relay credentials on both sides", func() bool { return relayFetches.Load() >= fetched+2 })
+	time.Sleep(time.Second)
+	hears(t, "kat, after new credentials", kat.tone.record(2*time.Second), []float64{660}, 440)
 	kat.e.HangUp(ctx)
 	for _, n := range []string{"a.test", "b.test"} {
 		b, _ := os.ReadFile(relays.Logs[n])
@@ -502,6 +512,8 @@ func TestE2ECallsRelayOnly(t *testing.T) {
 	if !voiceOf(kat.e).Relay {
 		t.Error("the visit isn't relay-only")
 	}
+	fetched = relayFetches.Load()
+	waitFor(t, "new relay credentials in the voice channel", func() bool { return relayFetches.Load() >= fetched+2 })
 	time.Sleep(2 * time.Second)
 	hears(t, "kat", kat.tone.record(2*time.Second), []float64{660}, 440)
 	hears(t, "ravi", ravi.tone.record(2*time.Second), []float64{440}, 660)

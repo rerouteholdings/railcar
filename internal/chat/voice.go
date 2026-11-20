@@ -15,6 +15,7 @@ import (
 	"github.com/pion/webrtc/v4"
 
 	"github.com/rerouteholdings/railcar/internal/media/rtc"
+	"github.com/rerouteholdings/railcar/internal/tieroute/client"
 	"github.com/rerouteholdings/railcar/internal/tieroute/sframe"
 	"github.com/rerouteholdings/railcar/internal/tieroute/wire"
 )
@@ -103,6 +104,7 @@ type visit struct {
 	cancel       context.CancelFunc
 	deafened     bool
 	ended        string
+	relay        relayLease
 }
 
 // voice is the engine's voice channel state. Like calls, one goroutine
@@ -165,10 +167,31 @@ func (v *voice) run() {
 		select {
 		case <-v.wake:
 		case <-tick.C:
-			if v.cur != nil {
+			if c := v.cur; c != nil {
+				if c.ended == "" && c.peer != nil && c.relay.due(time.Now()) {
+					v.e.renewRelay(v.do, func(r *client.Relay, err error) { v.renewed(c, r, err) })
+				}
 				v.emit()
 			}
 		}
+	}
+}
+
+// renewed takes new relay credentials during a long visit (client API,
+// "Call relays"), for when the connection gathers candidates again.
+func (v *voice) renewed(c *visit, r *client.Relay, err error) {
+	if v.cur != c || c.ended != "" || c.peer == nil {
+		return
+	}
+	if err != nil {
+		v.e.log.Info("chat: renewing the call relay", "err", err)
+		c.relay.failed()
+		return
+	}
+	c.opts.ICEServers = iceServers(r)
+	c.relay.set(r)
+	if err := c.peer.PC.SetConfiguration(c.opts.Config()); err != nil {
+		v.e.log.Info("chat: renewing the call relay", "err", err)
 	}
 }
 
@@ -256,9 +279,10 @@ func (v *voice) join(chat string) error {
 	tctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	relay, terr := e.c.Turn(tctx)
 	cancel()
+	c.relay.set(relay)
 	switch {
 	case terr == nil:
-		c.opts.ICEServers = []webrtc.ICEServer{{URLs: relay.URLs, Username: relay.Username, Credential: relay.Credential}}
+		c.opts.ICEServers = iceServers(relay)
 	case c.opts.RelayOnly:
 		var we *wire.Error
 		if errors.As(terr, &we) && we.Code == "not-implemented" {
