@@ -100,6 +100,22 @@ func (d *DemoBackend) Act(_ context.Context, chat string, a Action) (string, err
 	switch a.Kind {
 	case "create-community", "join-community":
 		return "", errors.New("The demo has one community. Communities need a community server")
+	case "blocked":
+		return "You haven't blocked anyone", nil
+	case "unblock":
+		return "You unblocked " + a.Arg, nil
+	case "remove-contact", "block":
+		if c == nil || c.Kind != DirectChat || len(c.Members) == 0 {
+			return "", errors.New("Open your direct chat with them first. The demo takes no handles here")
+		}
+		who := "@" + c.Members[0].Handle
+		line := "You removed " + who + " as a contact"
+		if a.Kind == "block" {
+			line = "You blocked " + who
+		}
+		c.Stopped = line + "."
+		d.emit(ChatChanged{*c})
+		return line, nil
 	}
 	if c == nil {
 		return "", errors.New("Open a chat first")

@@ -130,6 +130,9 @@ func act(ctx context.Context, eng *chat.Engine, chatID string, a ui.Action) (str
 	if msg, ok, err := actBackup(ctx, eng, a); ok {
 		return msg, err
 	}
+	if msg, ok, err := actContacts(ctx, eng, chatID, a); ok {
+		return msg, err
+	}
 	if msg, ok, err := actCalls(ctx, eng, chatID, a); ok {
 		if err != nil {
 			return "", err

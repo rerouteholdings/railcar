@@ -49,6 +49,7 @@ const (
 	overlayReport
 	overlayPassphrase
 	overlayAudio
+	overlayConfirm
 )
 
 // narrowWidth is the width under which the main view shows one pane at a
@@ -105,6 +106,7 @@ type mainView struct {
 	narrowDetails bool
 	overlay       overlay
 	audio         audioState
+	confirm       confirmState
 	// picker is the file picker for sending a file to pickChat.
 	picker   filepicker.Model
 	pickChat string
@@ -880,6 +882,8 @@ func (m *mainView) keyPress(a *App, msg tea.KeyPressMsg) tea.Cmd {
 		return m.devicesKey(a, msg)
 	case overlayAudio:
 		return m.audioKey(a, msg)
+	case overlayConfirm:
+		return m.confirmKey(a, msg)
 	case overlayInvite:
 		if key.Matches(msg, k.Back) || msg.String() == "enter" || msg.String() == "q" {
 			m.overlay = overlayNone
@@ -1169,6 +1173,8 @@ func (m *mainView) view(a *App) string {
 		return overlayOn(screen, m.devicesView(a), a.width, a.height)
 	case overlayAudio:
 		return overlayOn(screen, m.audioView(a), a.width, a.height)
+	case overlayConfirm:
+		return overlayOn(screen, m.confirmView(a), a.width, a.height)
 	case overlayNewGroup:
 		return overlayOn(screen, m.groupView(a), a.width, a.height)
 	}
