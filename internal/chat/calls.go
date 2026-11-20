@@ -24,6 +24,9 @@ const (
 	MaxCall      = 10               // people in a call
 	ringFor      = 60 * time.Second // how long a ring lasts
 	oldKeysFor   = 10 * time.Second // a past epoch's keys, after a commit
+	stateEvery   = 30 * time.Second // state again, in a group call
+	callStateFor = 120 * time.Second
+	callListFor  = 6 * time.Hour
 	connectLimit = 30 * time.Second // to connect to a device after offering
 )
 
@@ -206,6 +209,7 @@ type call struct {
 	ctx      context.Context
 	deafened bool
 	relay    relayLease
+	stateAt  time.Time // when this device last sent state
 }
 
 // knownCall is a call going on in a chat, as far as this device saw.
@@ -216,6 +220,42 @@ type knownCall struct {
 	in    map[string]string // devices in it: device key to identity
 	rang  bool              // this device was rung
 	acked bool              // the ring was shown as missed or answered
+	// joined and stated are when each device in it last sent ring or
+	// accept, and state; lastState is the newest state from anyone
+	// ("Calls going on", §15.2).
+	joined    map[string]time.Time
+	stated    map[string]time.Time
+	lastState time.Time
+}
+
+// note records a device's ring, accept, or state for the participant
+// list (§15.2, "Calls going on").
+func (k *knownCall) note(key, from, op string) {
+	if k.joined == nil {
+		k.joined, k.stated = map[string]time.Time{}, map[string]time.Time{}
+	}
+	now := time.Now()
+	k.in[key] = from
+	if op == opState {
+		k.stated[key], k.lastState = now, now
+	} else {
+		k.joined[key] = now
+	}
+}
+
+// prune drops the devices a group call's participant list no longer has:
+// one is on it while its ring or accept is under 6 hours old, or its
+// state under 120 seconds old. A call nobody has sent state for in 120
+// seconds is over, so a lost hangup doesn't leave it showing (§15.2).
+func (k *knownCall) prune(now time.Time) {
+	for key := range k.in {
+		if now.Sub(k.joined[key]) >= callListFor && now.Sub(k.stated[key]) >= callStateFor {
+			delete(k.in, key)
+		}
+	}
+	if !k.lastState.IsZero() && now.Sub(k.lastState) >= callStateFor {
+		clear(k.in)
+	}
 }
 
 // calls is the engine's call state. One goroutine, run, handles every
@@ -636,6 +676,7 @@ func (e *Engine) SetCallDeafened(on bool) error {
 }
 
 func (cs *calls) sendState(c *call) {
+	c.stateAt = time.Now()
 	muted := c.media.Muted()
 	if err := cs.send(c.chat, CallContent{Call: c.id, Op: opState, Muted: &muted, Deafened: c.deafened}); err != nil {
 		cs.e.log.Info("chat: sending call state", "err", err)
@@ -789,6 +830,11 @@ func (cs *calls) tick() {
 			c.keys.refresh()
 			c.media.SetSender(c.keys.sender())
 			cs.checkPeers(c)
+			if c.group && c.phase == CallActive && now.Sub(c.stateAt) >= stateEvery {
+				// Repeated, so devices that missed the accepts learn
+				// who's in the call (§15.2, "Calls going on").
+				cs.sendState(c)
+			}
 			if c.relay.due(now) {
 				cs.e.renewRelay(cs.do, func(r *client.Relay, err error) { cs.renewed(c, r, err) })
 			}
@@ -796,6 +842,12 @@ func (cs *calls) tick() {
 		}
 	}
 	for chat, k := range cs.known {
+		if cs.active == nil || cs.active.chat != chat || cs.active.phase == CallEnded || cs.active.phase == CallRinging {
+			if before := len(k.in); k.groupCall(cs.e, chat) {
+				k.prune(now)
+				changed = changed || len(k.in) != before
+			}
+		}
 		if len(k.in) == 0 && now.Sub(k.at) > ringFor && (cs.active == nil || cs.active.chat != chat || cs.active.phase == CallEnded) {
 			delete(cs.known, chat)
 		}
@@ -918,7 +970,7 @@ func (cs *calls) handle(chat string, group bool, from string, dev []byte, ts tim
 
 	switch m.Op {
 	case opRing:
-		k.in[key] = from
+		k.note(key, from, m.Op)
 		k.from = from
 		if mine {
 			return // another device of this identity is calling
@@ -940,7 +992,7 @@ func (cs *calls) handle(chat string, group bool, from string, dev []byte, ts tim
 		}
 		// Otherwise it's call waiting: shown, and nothing is sent.
 	case opAccept:
-		k.in[key] = from
+		k.note(key, from, m.Op)
 		if mine && !bytes.Equal(dev, myDev) {
 			cs.stopRinging(chat, idStr, "Answered on another device")
 		}
@@ -1036,7 +1088,7 @@ func (cs *calls) handle(chat string, group bool, from string, dev []byte, ts tim
 		}
 		cs.remote(c, d, m.Data)
 	case opState:
-		k.in[key] = from
+		k.note(key, from, m.Op)
 		if !inCall {
 			return // a device that isn't in the call ignores state
 		}
@@ -1269,4 +1321,14 @@ func (e *Engine) SetDirectCalls(on bool) error {
 	defer e.mu.Unlock()
 	e.st.DirectCalls = on
 	return e.save()
+}
+
+// groupCall reports whether a known call is in a group chat, where its
+// participant list follows state (§15.2). A direct call ends with either
+// side's hangup.
+func (k *knownCall) groupCall(e *Engine, chat string) bool {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	ch, ok := e.st.Chats[chat]
+	return ok && ch.Kind == KindGroup
 }
