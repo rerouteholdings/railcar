@@ -673,6 +673,7 @@ func (e *Engine) communityWelcome(ctx context.Context, cm *Community, d *client.
 	}
 	if d.Group == cm.MembersGroup {
 		e.joinedByApproval(cm)
+		e.linkedIn(cm)
 	}
 	e.refreshChannels(cm)
 	if err := e.topUpCommunity(ctx, cm); err != nil {

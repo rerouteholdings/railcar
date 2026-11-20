@@ -97,6 +97,9 @@ type Engine struct {
 	// rejoinDue is set when a hub no longer has commits this device
 	// missed, so it comes back as a new device (§11.9).
 	rejoinDue bool
+	// cclaimed is when this device last claimed key packages in each
+	// community for this identity's new devices.
+	cclaimed map[string]time.Time
 
 	// mu serializes everything that touches the MLS state or the records:
 	// processing the inbox, sending, and creating chats.

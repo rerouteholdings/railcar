@@ -27,6 +27,7 @@ func (e *Engine) linkBundle(ctx context.Context, d *client.Delivery) error {
 	if err := e.importContacts(ctx, b.Contacts); err != nil {
 		return err
 	}
+	e.joinLinkedCommunities(ctx, b.Communities)
 	if len(b.History) > 0 {
 		// Earlier messages, kept until this device joins their chats
 		// (§7.2, §7.3). Without them, the chats start empty.
@@ -121,6 +122,11 @@ func (e *Engine) AddDevice(ctx context.Context, d client.NewDevice, name string)
 	for _, id := range slices.Sorted(maps.Keys(e.st.Chats)) {
 		if c := e.st.Chats[id]; c.Stopped == "" && c.Kind != KindChannel && !c.Left {
 			b.Groups = append(b.Groups, id)
+		}
+	}
+	for _, server := range slices.Sorted(maps.Keys(e.st.Communities)) {
+		if cm := e.st.Communities[server]; !cm.Left && !cm.Asking && cm.MovingTo == "" {
+			b.Communities = append(b.Communities, server)
 		}
 	}
 	// History goes as files the new device downloads (§7.2, §7.3). Without

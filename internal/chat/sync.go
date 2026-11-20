@@ -108,6 +108,7 @@ func (e *Engine) syncAll(ctx context.Context) (bool, error) {
 		}
 		done = done && ok && err == nil
 	}
+	done = e.syncCommunityDevices(ctx) && done
 	e.rejoinIfDue(ctx)
 	return done, errors.Join(errs...)
 }

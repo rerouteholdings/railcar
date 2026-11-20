@@ -76,6 +76,9 @@ type Community struct {
 	// MovingTo is the community server a set-home names, until this
 	// device follows the community there (§16.6).
 	MovingTo string `json:"moving_to,omitempty"`
+	// Linking is set on a newly linked device until another device of
+	// this identity adds it to the members group (§7.2 step 5).
+	Linking bool `json:"linking,omitempty"`
 }
 
 // CGroup is one of a community's MLS groups.

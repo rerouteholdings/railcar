@@ -33,7 +33,7 @@ func linkRailcar(t *testing.T, o map[string]string, r *railcar, server, handle s
 		t.Fatal(err)
 	}
 	r2 := finishLink(t, l)
-	r.syncDevices()
+	r.syncDevices(func() { r2.sync() })
 	return r2
 }
 
