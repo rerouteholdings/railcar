@@ -237,6 +237,7 @@ func (e *Engine) processCommit(ctx context.Context, ch *Chat, b buffered) error 
 	if err := e.dev.Save(); err != nil {
 		return err
 	}
+	e.keepBound(j.bound)
 	after, err := g.State()
 	if err != nil {
 		return err
@@ -284,6 +285,7 @@ type judged struct {
 	added     []string        // new people
 	removed   []string        // people the commit takes out
 	leaving   map[string]bool // of removed, those who left on their own
+	bound     map[string]*identity.Chain
 }
 
 // judgeCommit judges a staged commit by the rules this client implements
@@ -615,7 +617,7 @@ func (e *Engine) judgeCommit(ctx context.Context, ch *Chat, before *mls.State, p
 			}
 		}
 	}
-	j := &judged{next: next, committer: committerID, removed: removedPeople, leaving: map[string]bool{}}
+	j := &judged{next: next, committer: committerID, removed: removedPeople, leaving: map[string]bool{}, bound: bound}
 	for id := range newPeople {
 		j.added = append(j.added, id)
 	}
@@ -759,4 +761,39 @@ func (e *Engine) processProposal(ctx context.Context, ch *Chat, b buffered) erro
 		e.log.Info("chat: committing a leave", "err", err)
 	}
 	return nil
+}
+
+// keepBound keeps the history a commit bound as this device's copy of each
+// other identity's chain, where it's newer than the copy, so messages from
+// a device the commit added check out without fetching the chain again
+// (§11.9). The caller holds e.mu.
+func (e *Engine) keepBound(bound map[string]*identity.Chain) {
+	lens, have := map[string]int{}, map[string]int{}
+	for id, c := range bound {
+		if c == nil {
+			continue
+		}
+		lens[id] = c.Len()
+		if cc, err := e.c.CachedChain(id); err == nil && cc != nil {
+			have[id] = cc.Len()
+		}
+	}
+	for _, id := range newerBound(e.c.ID(), lens, have) {
+		if _, err := e.c.AcceptChain(id, bound[id].Entries); err != nil {
+			e.log.Info("chat: keeping the history a commit bound", "err", err)
+		}
+	}
+}
+
+// newerBound lists the identities, other than me, whose bound history is
+// longer than this device's copy, by chain lengths, sorted.
+func newerBound(me string, bound, have map[string]int) []string {
+	var out []string
+	for id, n := range bound {
+		if id != me && n > have[id] {
+			out = append(out, id)
+		}
+	}
+	slices.Sort(out)
+	return out
 }

@@ -363,13 +363,8 @@ func (e *Engine) welcome(ctx context.Context, d *client.Delivery) error {
 	me := e.c.ID()
 	old := e.st.Chats[d.Group]
 	back := old != nil && old.Rejoining
-	if d.From != me && !(back && slices.Contains(old.Members, d.From)) {
-		// A member of a chat this device is coming back to may add it
-		// again, contact or not (§11.9).
-		c := e.st.Contacts[d.From]
-		if c == nil || (c.State != StateContact && c.State != StatePendingOut) {
-			return fmt.Errorf("chat: a Welcome from %s, who isn't a contact", d.From)
-		}
+	if !welcomeFrom(me, d.From, e.st.Contacts[d.From]) {
+		return fmt.Errorf("chat: a Welcome from %s, who isn't a contact", d.From)
 	}
 	if old != nil && !back {
 		return nil // already in it
@@ -563,4 +558,11 @@ func (e *Engine) chainForBasis(ctx context.Context, id string, b BasisRef) []wir
 		return c.Entries
 	}
 	return nil
+}
+
+// welcomeFrom reports whether a Welcome may come from from: this identity's
+// other devices, or a contact, or someone this identity has asked, also
+// for a chat a device is coming back to (§10.3, §11.9).
+func welcomeFrom(me, from string, c *Contact) bool {
+	return from == me || c != nil && (c.State == StateContact || c.State == StatePendingOut)
 }
