@@ -51,6 +51,9 @@ const (
 	EventStopped
 	// EventPresence: Who's presence or public profile changed (§13).
 	EventPresence
+	// EventCall: this device's call, or its rings, changed (§15.2). Call
+	// is nil when there's no call.
+	EventCall
 )
 
 // Event is something that happened.
@@ -67,12 +70,17 @@ type Event struct {
 	// Who and On describe a typing indicator.
 	Who string
 	On  bool
+	// Call and Rings are this device's call and unanswered rings.
+	Call  *CallInfo
+	Rings []CallRing
 }
 
 // Options adjust an Engine.
 type Options struct {
 	// Logger receives debug lines. Message text and keys never go in it.
 	Logger *slog.Logger
+	// Calls adjust calls and voice channels.
+	Calls CallOptions
 }
 
 // Engine is the chat layer for one signed-in identity on this device.
@@ -110,6 +118,9 @@ type Engine struct {
 
 	// ppl holds presence and public profiles (§13).
 	ppl people
+
+	// calls is this device's call (§15.2).
+	calls *calls
 
 	evMu   sync.Mutex
 	events chan Event
@@ -149,6 +160,7 @@ func New(c *client.Client, opts Options) (*Engine, error) {
 		events:   make(chan Event, 256),
 	}
 	e.loadPeople()
+	e.calls = newCalls(e, opts.Calls)
 	return e, nil
 }
 

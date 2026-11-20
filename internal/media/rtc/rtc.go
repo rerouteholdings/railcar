@@ -265,8 +265,8 @@ type Peer struct {
 	remote  bool
 }
 
-// NewPeer makes a connection. onICE gets each local candidate, and an
-// empty one when there are no more. onTrack gets each remote track with
+// NewPeer makes a connection. onICE, if not nil, gets each local
+// candidate, and an empty one when there are no more. onTrack gets each remote track with
 // the kind of its media section.
 func NewPeer(api *webrtc.API, o Options, onICE func(Candidate), onTrack func(*webrtc.TrackRemote, string)) (*Peer, error) {
 	pc, err := api.NewPeerConnection(o.Config())
@@ -275,6 +275,9 @@ func NewPeer(api *webrtc.API, o Options, onICE func(Candidate), onTrack func(*we
 	}
 	p := &Peer{PC: pc}
 	pc.OnICECandidate(func(c *webrtc.ICECandidate) {
+		if onICE == nil {
+			return
+		}
 		if c == nil {
 			onICE(Candidate{})
 			return
@@ -322,19 +325,36 @@ func (p *Peer) AddSections(track webrtc.TrackLocal) error {
 	return err
 }
 
+// Gather is how long Offer and Remote wait for this side's ICE
+// candidates, so the description carries them and few ice messages
+// follow. Zero sends the description at once.
+var Gather = 5 * time.Second
+
 // Offer makes an offer and returns it as JSON text.
 func (p *Peer) Offer() (string, error) {
 	o, err := p.PC.CreateOffer(nil)
 	if err != nil {
 		return "", err
 	}
-	if err := p.PC.SetLocalDescription(o); err != nil {
-		return "", err
-	}
-	return marshalDesc(o)
+	return p.setLocal(o)
 }
 
-func marshalDesc(d webrtc.SessionDescription) (string, error) {
+// setLocal sets a local description, waits for the candidates up to
+// Gather, and returns the description as JSON text.
+func (p *Peer) setLocal(d webrtc.SessionDescription) (string, error) {
+	done := webrtc.GatheringCompletePromise(p.PC)
+	if err := p.PC.SetLocalDescription(d); err != nil {
+		return "", err
+	}
+	if Gather > 0 {
+		select {
+		case <-done:
+		case <-time.After(Gather):
+		}
+	}
+	if l := p.PC.LocalDescription(); l != nil {
+		d = *l
+	}
 	b, err := json.Marshal(Description{Type: d.Type.String(), SDP: d.SDP})
 	return string(b), err
 }
@@ -386,10 +406,7 @@ func (p *Peer) Remote(data string, track webrtc.TrackLocal) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	if err := p.PC.SetLocalDescription(a); err != nil {
-		return "", err
-	}
-	return marshalDesc(a)
+	return p.setLocal(a)
 }
 
 // AddCandidate adds a remote ICE candidate, given as JSON text. An empty

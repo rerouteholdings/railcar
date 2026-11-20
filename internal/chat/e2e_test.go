@@ -70,12 +70,16 @@ type railcar struct {
 
 func newRailcar(t *testing.T, origins map[string]string, server, handle string) *railcar {
 	t.Helper()
+	return newRailcarWith(t, origins, server, handle, Options{})
+}
+
+func newRailcarWith(t *testing.T, origins map[string]string, server, handle string, opts Options) *railcar {
+	t.Helper()
 	ctx := context.Background()
 	c, _, err := client.Register(ctx, server, handle, testnet.SignupCode, filepath.Join(t.TempDir(), handle), client.Options{Origins: origins})
 	if err != nil {
 		t.Fatal(err)
 	}
-	opts := Options{}
 	if os.Getenv("RAILCAR_E2E_LOGS") != "" {
 		opts.Logger = slog.New(slog.NewTextHandler(testWriter{t, handle}, &slog.HandlerOptions{Level: slog.LevelDebug}))
 	}

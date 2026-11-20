@@ -7,7 +7,8 @@ package opus
 
 /*
 #cgo CFLAGS: -I${SRCDIR}/../../../build/opus/include
-#cgo LDFLAGS: ${SRCDIR}/../../../build/opus/lib/libopus.a -lm
+#cgo LDFLAGS: ${SRCDIR}/../../../build/opus/lib/libopus.a
+#cgo linux LDFLAGS: -lm
 #include <opus/opus.h>
 #include <stdlib.h>
 

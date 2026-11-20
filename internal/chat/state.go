@@ -209,6 +209,9 @@ type state struct {
 	// Backup is the message history backup, once this device turned it
 	// on (§7.5).
 	Backup *BackupState `json:"backup,omitempty"`
+	// DirectCalls allows calls and voice channels to connect directly,
+	// which shows IP addresses. Off by default (§15.2).
+	DirectCalls bool `json:"direct_calls,omitempty"`
 }
 
 func loadState(p *store.Profile) (*state, error) {

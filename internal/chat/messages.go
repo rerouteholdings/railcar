@@ -62,6 +62,11 @@ func (e *Engine) processApp(ctx context.Context, ch *Chat, b buffered) error {
 	if b.From != "" && b.From != id {
 		return errors.New("chat: an app-message delivered by someone else")
 	}
+	if t == CCall {
+		// Call signaling isn't a message, and isn't kept (§15.2).
+		_, dev, _ := parseCredential(leaf.Identity)
+		return e.handleCall(ch, id, dev, am)
+	}
 	if err := e.applyContent(ctx, ch, id, am, t, b.Received); err != nil {
 		return err
 	}
