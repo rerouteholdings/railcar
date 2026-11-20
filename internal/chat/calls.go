@@ -527,6 +527,11 @@ func (cs *calls) join(chat string, id []byte, from string, group bool) error {
 		}
 	}
 	c.incoming, c.from, c.phase = true, from, CallConnecting
+	if c.ringAt.IsZero() {
+		// A call answered from a ring that wasn't the active call starts
+		// its connecting time now, or the tick ends it at once.
+		c.ringAt = time.Now()
+	}
 	cs.setActive(c)
 	cs.mu.Lock()
 	delete(cs.rings, wire.EncodeB64(id))
