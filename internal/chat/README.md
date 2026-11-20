@@ -106,7 +106,7 @@ Calls (§15.2):
 - Ringing lasts 60 seconds; then the caller sends `hangup`, and the callee's devices show a missed call. A ring older than that when it arrives is a missed call at once.
 - Offers have §15.3's three sections, and wait up to 5 seconds for this side's ICE candidates, so few `ice` messages follow.
 - SFrame keys: `base_key` is `MLS-Exporter("SFrame 1.0 Tieroute call", call ID, 16)` for the current epoch, and the KID is the leaf index and the epoch's low 4 bits. The sender switches at the next epoch; a receiver keeps the previous epoch's key for 10 seconds.
-- `state` carries mute and deafen, sent again whenever a device joins.
+- `state` carries mute and deafen, sent again whenever a device joins, and every 30 seconds in a group call. Every device keeps a group call's participants from it (§15.2, "Calls going on"): a device counts from its `ring` or `accept` for 6 hours, or its `state` for 120 seconds, until its `hangup`, and a call nobody has sent `state` for in 120 seconds is over.
 - Relays (§15.1): calls use only relayed candidates, from `GET turn`, unless the user allows direct calls (`SetDirectCalls`, kept in the chat records). Without a relay, a relay-only call doesn't start, and says why.
 - Three quarters of the way through the credentials' `ttl`, a call or a voice channel fetches new ones from `GET turn`, and gives them to every connection, so a connection made or gathered later uses them (client API, "Call relays"). A failed fetch is tried again after 30 seconds. Connections already up keep their relay allocations.
 - The microphone and speakers are the system's defaults, or the ones chosen with `SetAudioDevices`, by name, kept in the chat records. A chosen device that isn't connected falls back to the default.
@@ -114,8 +114,10 @@ Calls (§15.2):
 Voice channels (§16.4, community server API "Voice"):
 
 - The community stream carries `voice-join`, `voice-sdp`, `voice-ice`, and `voice-leave`. A visit has a random 32-bit ID and a random 32-byte base key; an `already-exists` error picks another ID.
-- After `voice-joined`, the device sends its `voice-key` in the group that carries the channel, then media with the KID visit ID and generation. Each later `voice-state` that lists a new visit makes it send the key again, ephemeral, and `voice-mute` after it while muted. The first `voice-state` after joining doesn't count.
-- Keys arrive for every voice channel this device can see, and are kept in memory; a key for a visit no `voice-state` lists yet is kept for a minute. A key or mute state from someone other than the visit's identity is dropped.
+- After `voice-joined`, the device sends its `voice-key` in the group that carries the channel, then media with the KID visit ID, generation, and stream byte, `0` for the voice (§16.4). Each later `voice-state` that lists a new visit makes it send the key again, ephemeral, and `voice-mute` after it while muted. The first `voice-state` after joining doesn't count.
+- Keys arrive for every voice channel this device can see, and are kept in memory; a key for a visit no `voice-state` lists yet is kept for a minute. A key or mute state from someone other than the visit's identity is dropped. Each stream's keys come from the visit's base key and its own KID, and a frame plays as the voice or a cast's audio by its KID's last byte; a cast's video is dropped, and an unknown stream byte too. A replaced generation is kept 10 seconds.
+- After applying a commit that removes a leaf from the group carrying its voice channel, the device replaces its base key: the next generation, sent as a stored `voice-key` in that group, then its media switches. After generation 255, it starts a new visit (§16.4).
+- Voice channels leave out the relay-only setting, which is for calls: the homeserver's relay is offered when `GET turn` gives credentials, and the device connects directly when it doesn't (§15.2).
 - `voice-moved` joins the other channel with a new visit. A dropped stream ends the visit, and Railcar joins again when it reconnects.
 - Who's speaking comes from each sender's audio level.
 
@@ -153,7 +155,6 @@ for ev := range eng.Events() { ... }
 - Removing this identity's own removed devices' leaves from community groups: members remove them as for anyone's (§16.5), but the identity's other devices don't do it first.
 - Offering re-creation when a Remove held for a removed device has failed for an hour counts as failed commits, not separately.
 - Casting media in a call or a voice channel (§15.3): Railcar receives casts, and never sends one.
-- Rekeying a visit to a voice channel with a new generation (§16.4): a visit keeps generation 0. The spec's rule for when is still proposed.
 - Checking a message against the sender's leaf in the epoch it was sent in, when the leaf changed since. Such a message is dropped for now.
 
 ## Tests
@@ -194,7 +195,7 @@ go test ./internal/chat -run E2E -v
 - `TestE2ERailcarCalls`: two Railcar identities on two servers call each other, and each hears the other's tone, decrypted from SFrame; a mute shows and silences; a declined call and a missed call leave their lines; and a group call of three, a full mesh, goes on when the caller leaves.
 - `TestE2EInteropCalls`: Railcar calls Reroute, and Reroute calls Railcar; each hears the other, and each sees the other muted.
 - `TestE2ECallsRelayOnly`: with direct calls off, calls between Railcar identities and with Reroute, and a voice channel, go only through each homeserver's coturn relay, and each side fetches new relay credentials partway through. It needs coturn's `turnserver`, and skips without it.
-- `TestE2ERailcarVoice`: two Railcar identities meet in a voice channel through the SFU and hear each other, a mute shows, and a third joins late and gets both keys again.
+- `TestE2ERailcarVoice`: two Railcar identities meet in a voice channel through the SFU and hear each other, one joining with direct calls off and no relay on the network, a mute shows, and a third joins late and gets both keys again. When the third is kicked, the one still in the channel replaces its key, and the owner joins again and hears it.
 - `TestE2EInteropVoice`: Railcar and Reroute meet in a voice channel in a community Reroute created, and each hears the other; Reroute, deafened, is in it first, and Railcar joins late and gets its key.
 - `TestE2ERailcarContacts`: between Railcar identities on two servers, removing a contact ends the chat on both sides and on the remover's second device; they become contacts again in a new chat; a block isn't announced, and the blocked person's messages and new request go nowhere; unblocking lets a request through; blocking a waiting request drops it.
 - `TestE2EInteropContacts`: Railcar removes and blocks Reroute identities, whose later messages and requests go nowhere, and Reroute's block drops Railcar's request.
