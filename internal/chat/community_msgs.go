@@ -649,7 +649,7 @@ func (e *Engine) csend(ctx context.Context, cm *Community, g *CGroup, channel *u
 }
 
 func signedApp(key []byte, am AppMessage) (wire.Signed, error) {
-	return sig.SignMessageKey(key, TypeAppMessage, am)
+	return signPadded(key, am)
 }
 
 func (e *Engine) logAdd(cm *Community, channel uint64, le logEntry) {

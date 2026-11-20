@@ -5,6 +5,8 @@ import (
 	"encoding/json/jsontext"
 	"errors"
 	"fmt"
+	"math/bits"
+	"strings"
 
 	"github.com/rerouteholdings/railcar/internal/tieroute/client"
 	"github.com/rerouteholdings/railcar/internal/tieroute/identity"
@@ -23,6 +25,9 @@ type AppMessage struct {
 	Channel *uint64        `json:"channel,omitempty"`
 	TS      int64          `json:"ts"`
 	C       jsontext.Value `json:"c"`
+	// Pad is padding: "0" characters that bring JCS(signed) to its
+	// target length. Senders always set it; receivers ignore it (§12).
+	Pad *string `json:"pad,omitzero"`
 }
 
 // Content types this client knows (§12). Every other t is unknown
@@ -163,11 +168,61 @@ func signAppMessage(key ed25519.PrivateKey, id string, group []byte, ts int64, c
 	if err != nil {
 		return nil, err
 	}
-	s, err := sig.SignMessageKey(key, TypeAppMessage, AppMessage{ID: id, Group: group, TS: ts, C: c})
+	s, err := signPadded(key, AppMessage{ID: id, Group: group, TS: ts, C: c})
 	if err != nil {
 		return nil, err
 	}
 	return s.Canonical(), nil
+}
+
+// The padding's floor, and the bytes the pad member adds besides its
+// characters: `,"pad":"` and `"`, with their quotation marks escaped in
+// the signed object's `b` (§12, "Padding").
+const (
+	padFloor  = 256
+	padMember = 13
+)
+
+// padme rounds x up to Padmé's next length: with E = floor(log2 x) and
+// S = floor(log2 E) + 1, a multiple of 2^(E - S).
+func padme(x uint64) uint64 {
+	if x < 2 {
+		return x
+	}
+	e := uint64(bits.Len64(x) - 1)
+	sBits := uint64(bits.Len64(e))
+	mask := uint64(1)<<(e-sBits) - 1
+	return (x + mask) &^ mask
+}
+
+// padTarget is the length JCS(signed) pads to, for an app-message whose
+// JCS(signed) is l bytes without pad (§12).
+func padTarget(l int) int {
+	return int(padme(uint64(max(padFloor, l+padMember))))
+}
+
+// signPadded signs an app-message with the message key, padded to its
+// target length (§12, "Padding"): it signs without pad to measure it,
+// then adds the "0" characters that make JCS(signed) the target, and signs
+// again. Ed25519 signatures are always 64 bytes, so the measure holds.
+func signPadded(key ed25519.PrivateKey, am AppMessage) (wire.Signed, error) {
+	am.Pad = nil
+	s, err := sig.SignMessageKey(key, TypeAppMessage, am)
+	if err != nil {
+		return wire.Signed{}, err
+	}
+	l := len(s.Canonical())
+	t := padTarget(l)
+	pad := strings.Repeat("0", t-l-padMember)
+	am.Pad = &pad
+	s, err = sig.SignMessageKey(key, TypeAppMessage, am)
+	if err != nil {
+		return wire.Signed{}, err
+	}
+	if n := len(s.Canonical()); n != t {
+		return wire.Signed{}, fmt.Errorf("chat: a padded app-message of %d bytes, not %d", n, t)
+	}
+	return s, nil
 }
 
 // openAppMessage parses an MLS plaintext as a signed app-message and
