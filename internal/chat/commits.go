@@ -722,12 +722,14 @@ func (e *Engine) processProposal(ctx context.Context, ch *Chat, b buffered) erro
 		return nil
 	}
 	ok := p.Proposal != nil && p.Proposal.Kind == "remove" && p.Proposal.Removed != nil && p.Sender.Kind == "member"
+	var leaver string
 	if ok {
 		from, fok := st.Member(p.Sender.Index)
 		target, tok := st.Member(*p.Proposal.Removed)
 		fid, _, ferr := parseCredential(from.Identity)
 		tid, _, terr := parseCredential(target.Identity)
 		ok = fok && tok && ferr == nil && terr == nil && fid == tid
+		leaver = fid
 	}
 	if !ok {
 		if p.Proposal != nil {
@@ -740,8 +742,9 @@ func (e *Engine) processProposal(ctx context.Context, ch *Chat, b buffered) erro
 		return err
 	}
 	if ch.Kind != KindGroup {
-		// Direct chats end only by removing the contact, which comes in
-		// a later version; the proposal stays queued.
+		// A direct chat ends when either side leaves it, which only
+		// removing or blocking the contact does (§9.6).
+		e.directLeft(ctx, ch, leaver)
 		return nil
 	}
 	if err := e.commitPending(ctx, ch); err != nil {

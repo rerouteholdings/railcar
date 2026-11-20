@@ -190,6 +190,19 @@ func (c *Client) RemoveContact(ctx context.Context, id string) error {
 	return c.authed(ctx, http.MethodPost, "contacts/remove", nil, map[string]string{"id": id}, nil)
 }
 
+// BlockContact blocks an identity (POST contacts/block, §9.6): it's no
+// longer a contact, and the homeserver drops its requests and Welcomes,
+// silently.
+func (c *Client) BlockContact(ctx context.Context, id string) error {
+	return c.authed(ctx, http.MethodPost, "contacts/block", nil, map[string]string{"id": id}, nil)
+}
+
+// UnblockContact unblocks an identity (POST contacts/unblock). It doesn't
+// become a contact again.
+func (c *Client) UnblockContact(ctx context.Context, id string) error {
+	return c.authed(ctx, http.MethodPost, "contacts/unblock", nil, map[string]string{"id": id}, nil)
+}
+
 // Contact states in the homeserver's contact list.
 const (
 	ContactFull       = "contact"

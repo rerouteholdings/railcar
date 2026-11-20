@@ -290,3 +290,128 @@ func (e *Engine) noteHomes(ext *GroupExt, ids ...string) {
 		}
 	}
 }
+
+// RemoveContact takes someone off the contact list, and leaves the direct
+// chat with them (§9.6, §11.7). The leave goes to them, so their app ends
+// the chat, and to this identity's other devices. The history stays.
+func (e *Engine) RemoveContact(ctx context.Context, id string) error {
+	return e.dropContact(ctx, id, false)
+}
+
+// Block blocks someone (§9.6): they're no longer a contact, and the
+// homeserver drops their requests and Welcomes. A request from them is
+// dropped too. Blocking isn't announced: the direct chat ends on this
+// identity's devices, whose leave goes only to those devices.
+func (e *Engine) Block(ctx context.Context, id string) error {
+	return e.dropContact(ctx, id, true)
+}
+
+func (e *Engine) dropContact(ctx context.Context, id string, block bool) error {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	c := e.st.Contacts[id]
+	switch {
+	case id == e.c.ID():
+		return errors.New("chat: that's you")
+	case block && c != nil && c.State == StateBlocked:
+		return errors.New("chat: you've blocked them already")
+	case !block && (c == nil || c.State != StateContact):
+		return errors.New("chat: they aren't a contact")
+	}
+	var err error
+	if block {
+		err = e.c.BlockContact(ctx, id)
+	} else {
+		err = e.c.RemoveContact(ctx, id)
+	}
+	if err != nil {
+		return err
+	}
+	who := "@" + e.st.Handles[id]
+	line := "You removed " + who + " as a contact"
+	if block {
+		line = "You blocked " + who
+	}
+	if c != nil && c.Chat != "" {
+		if ch := e.st.Chats[c.Chat]; ch != nil && !ch.Left && ch.Stopped == "" {
+			to := ch.Members
+			if block {
+				to = []string{e.c.ID()}
+			}
+			if err := e.proposeLeave(ctx, ch, to); err != nil {
+				e.log.Info("chat: leaving the direct chat", "err", err)
+			}
+			e.leftGroup(ctx, ch, line)
+		}
+	}
+	e.settleContact(id, block)
+	return e.save()
+}
+
+// settleContact records that a contact was removed or blocked. The caller
+// holds e.mu, and saves.
+func (e *Engine) settleContact(id string, blocked bool) {
+	c := e.st.Contacts[id]
+	if !blocked {
+		if c != nil {
+			delete(e.st.Contacts, id)
+			e.emit(Event{Kind: EventContact, Contact: &Contact{ID: id, Handle: c.Handle}})
+		}
+		return
+	}
+	if c == nil {
+		c = &Contact{ID: id, Handle: e.st.Handles[id]}
+		e.st.Contacts[id] = c
+	}
+	c.State, c.Request, c.Since = StateBlocked, nil, e.c.Clock().Now().Unix()
+	e.emit(Event{Kind: EventContact, Contact: ptr(*c)})
+}
+
+// Unblock unblocks someone. They don't become a contact again: either of
+// you sends a request for that.
+func (e *Engine) Unblock(ctx context.Context, id string) error {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	c := e.st.Contacts[id]
+	if c == nil || c.State != StateBlocked {
+		return errors.New("chat: they aren't blocked")
+	}
+	if err := e.c.UnblockContact(ctx, id); err != nil {
+		return err
+	}
+	delete(e.st.Contacts, id)
+	e.emit(Event{Kind: EventContact, Contact: &Contact{ID: id, Handle: c.Handle}})
+	return e.save()
+}
+
+// directLeft ends a direct chat whose other side left: the contact removed
+// this identity, or blocked it from a client that announces that (§9.6).
+// When this identity left from another device, this device ends the chat
+// too, and takes the contact's state from the homeserver. The caller
+// holds e.mu.
+func (e *Engine) directLeft(ctx context.Context, ch *Chat, who string) {
+	if who != e.c.ID() {
+		e.leftGroup(ctx, ch, "@"+e.st.Handles[who]+" left this chat")
+		return
+	}
+	peer := ch.Peer
+	state := ""
+	if list, err := e.c.Contacts(ctx); err == nil {
+		for _, hc := range list {
+			if hc.ID == peer {
+				state = hc.State
+			}
+		}
+	} else {
+		e.log.Info("chat: the contact list", "err", err)
+	}
+	line := "You removed @" + e.st.Handles[peer] + " as a contact on another device"
+	if state == client.ContactBlocked {
+		line = "You blocked @" + e.st.Handles[peer] + " on another device"
+	}
+	e.leftGroup(ctx, ch, line)
+	if state != client.ContactFull {
+		e.settleContact(peer, state == client.ContactBlocked)
+		e.save()
+	}
+}

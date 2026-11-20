@@ -705,12 +705,23 @@ func (e *Engine) Leave(ctx context.Context, chat string) error {
 			return fmt.Errorf("chat: handing admin over before leaving: %w", err)
 		}
 	}
+	if err := e.proposeLeave(ctx, ch, ch.Members); err != nil {
+		return err
+	}
+	e.leftGroup(ctx, ch, "You left the group")
+	return nil
+}
+
+// proposeLeave proposes removing each of the identity's leaves in a chat,
+// and sends the proposals to the identities in to (§11.7). The caller
+// holds e.mu, and stops following the chat after it.
+func (e *Engine) proposeLeave(ctx context.Context, ch *Chat, to []string) error {
 	g, st, _, err := e.groupState(ch)
 	if err != nil {
 		return err
 	}
 	// This device's own leaf first, then the identity's other leaves.
-	leaves := leavesByIdentity(st)[me]
+	leaves := leavesByIdentity(st)[e.c.ID()]
 	slices.SortFunc(leaves, func(a, b leafOf) int {
 		return boolInt(b.index == st.OwnLeafIndex) - boolInt(a.index == st.OwnLeafIndex)
 	})
@@ -721,7 +732,7 @@ func (e *Engine) Leave(ctx context.Context, chat string) error {
 			return err
 		}
 		epoch := ch.Epoch
-		outs = append(outs, client.Outgoing{ID: client.NewMsgID(), Kind: "mls", To: ch.Members, Group: ch.ID, Epoch: &epoch, MLS: "proposal", Data: p.Message})
+		outs = append(outs, client.Outgoing{ID: client.NewMsgID(), Kind: "mls", To: to, Group: ch.ID, Epoch: &epoch, MLS: "proposal", Data: p.Message})
 	}
 	if err := e.dev.Save(); err != nil {
 		return err
@@ -735,7 +746,6 @@ func (e *Engine) Leave(ctx context.Context, chat string) error {
 			return &wire.Error{Code: r.Error, Msg: "the homeserver refused the leave"}
 		}
 	}
-	e.leftGroup(ctx, ch, "You left the group")
 	return nil
 }
 
