@@ -14,6 +14,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 
 	"github.com/rerouteholdings/railcar/internal/app"
+	"github.com/rerouteholdings/railcar/internal/proxy"
 	"github.com/rerouteholdings/railcar/internal/tieroute/client"
 	"github.com/rerouteholdings/railcar/internal/tieroute/store"
 	"github.com/rerouteholdings/railcar/internal/ui"
@@ -26,7 +27,8 @@ const usage = `Railcar is a terminal client for Tieroute, a federated, end-to-en
 encrypted (E2EE) chat protocol.
 
 Usage:
-  railcar [--profile DIR] [--key-file] [--log FILE] [--dev-server NAME=URL]...
+  railcar [--profile DIR] [--key-file] [--log FILE] [--proxy URL] [--proxy-calls]
+          [--config FILE] [--dev-server NAME=URL]...
   railcar --demo
   railcar --version
 
@@ -38,6 +40,23 @@ Options:
                          read the directory can then read your keys and messages.
   --log FILE             Write debug lines to FILE. They hold request paths and
                          errors, never message text or keys.
+  --proxy URL            Send every connection through a proxy, which also looks
+                         up hostnames: socks5://host:port or http://host:port,
+                         with user:password@ before the host if it needs them,
+                         or none. If the proxy can't be reached, Railcar doesn't
+                         connect at all. Calls and voice channels are off with
+                         a proxy, since they're UDP, which a proxy doesn't carry.
+  --proxy-calls          With a proxy, allow calls and voice channels anyway,
+                         only through your homeserver's relay. The relay, and
+                         the DNS server that looks up its name, see your real
+                         IP address.
+  --proxy-from-env       Without --proxy, take the proxy from ALL_PROXY,
+                         HTTPS_PROXY, or HTTP_PROXY. Railcar ignores them
+                         otherwise.
+  --config FILE          Read settings from FILE, one key = value a line: proxy,
+                         proxy-calls, and proxy-from-env, as the options above.
+                         The default is railcar.conf in the profile directory.
+                         Options on the command line win.
   --dev-server NAME=URL  Reach the server NAME at URL, over plain HTTP if the URL
                          says so. It's for local test networks, such as rerouted
                          in its development mode. Give it once for each server.
@@ -83,6 +102,11 @@ func run(args []string, stdout, stderr io.Writer) int {
 	showVersion := fs.Bool("version", false, "")
 	servers := devServers{}
 	fs.Var(servers, "dev-server", "")
+	var flagged proxy.Settings
+	proxyURL := fs.String("proxy", "", "")
+	fs.BoolFunc("proxy-calls", "", func(v string) error { return flagged.Set("proxy-calls", onOff(v)) })
+	fs.BoolFunc("proxy-from-env", "", func(v string) error { return flagged.Set("proxy-from-env", onOff(v)) })
+	configFile := fs.String("config", "", "")
 	if err := fs.Parse(args); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
 			return 0
@@ -99,6 +123,32 @@ func run(args []string, stdout, stderr io.Writer) int {
 		return 0
 	}
 
+	// The proxy URL is parsed here rather than by the flag package, which
+	// would print a bad value, password and all.
+	proxyGiven := false
+	fs.Visit(func(f *flag.Flag) { proxyGiven = proxyGiven || f.Name == "proxy" })
+	if proxyGiven {
+		if err := flagged.Set("proxy", *proxyURL); err != nil {
+			fmt.Fprintln(stderr, "railcar:", err)
+			return 2
+		}
+	}
+	if *configFile == "" {
+		*configFile = filepath.Join(*profile, "railcar.conf")
+	}
+	settings, err := proxy.ParseFile(*configFile)
+	if err != nil {
+		fmt.Fprintln(stderr, "railcar:", err)
+		return 2
+	}
+	settings = settings.Over(flagged)
+	px, err := settings.Resolve(os.Getenv)
+	if err != nil {
+		fmt.Fprintln(stderr, "railcar:", err)
+		return 2
+	}
+	warnReadable(stderr, *configFile, settings)
+
 	var backend ui.Backend
 	if *demo {
 		backend = ui.NewDemoBackend(ui.DemoOptions{Live: true})
@@ -113,6 +163,9 @@ func run(args []string, stdout, stderr io.Writer) int {
 			defer f.Close()
 			logger = slog.New(slog.NewTextHandler(f, &slog.HandlerOptions{Level: slog.LevelDebug}))
 		}
+		if logger != nil {
+			logger.Info("railcar: starting", "proxy", px.String(), "proxy_calls", settings.Calls)
+		}
 		backend = app.New(app.Options{
 			ProfileDir: *profile,
 			Logger:     logger,
@@ -120,7 +173,9 @@ func run(args []string, stdout, stderr io.Writer) int {
 				DeviceName: deviceName(),
 				Origins:    servers,
 				Store:      store.Options{AllowKeyFile: *keyFile},
+				Proxy:      px,
 			},
+			ProxyCalls: settings.Calls,
 		})
 	}
 	defer backend.Close()
@@ -130,6 +185,24 @@ func run(args []string, stdout, stderr io.Writer) int {
 		return 1
 	}
 	return 0
+}
+
+// onOff turns a boolean flag's value into a setting's.
+func onOff(v string) string {
+	if v == "false" {
+		return "off"
+	}
+	return "on"
+}
+
+// warnReadable warns when a config file holding a proxy password can be
+// read by other users.
+func warnReadable(w io.Writer, path string, s proxy.Settings) {
+	fi, err := os.Stat(path)
+	if err != nil || s.Proxy.Password == "" || fi.Mode().Perm()&0o077 == 0 {
+		return
+	}
+	fmt.Fprintf(w, "railcar: %s holds a proxy password and other users can read it. Run chmod 600 on it.\n", path)
 }
 
 // deviceName names this device in the identity's chain, such as "Railcar

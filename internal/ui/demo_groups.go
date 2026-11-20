@@ -102,6 +102,8 @@ func (d *DemoBackend) Act(_ context.Context, chat string, a Action) (string, err
 		return "", errors.New("The demo has one community. Communities need a community server")
 	case "blocked":
 		return "You haven't blocked anyone", nil
+	case "proxy":
+		return "The demo connects to nothing, so it uses no proxy", nil
 	case "unblock":
 		return "You unblocked " + a.Arg, nil
 	case "remove-contact", "block":

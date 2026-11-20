@@ -33,6 +33,28 @@ and messages.
 Write debug lines to \fIFILE\fR. They hold request paths and errors, never
 message text or keys.
 .TP
+.BI \-\-proxy " URL"
+Send every connection through a proxy, which also looks up hostnames:
+\fIsocks5://host:port\fR or \fIhttp://host:port\fR (HTTP CONNECT), with
+\fIuser:password@\fR before the host if it needs them, or \fInone\fR. If the
+proxy can't be reached, Railcar doesn't connect at all. Calls and voice
+channels are off with a proxy, since they're UDP, which a proxy doesn't carry.
+.TP
+.B \-\-proxy\-calls
+With a proxy, allow calls and voice channels anyway, only through your
+homeserver's relay. The relay, and the DNS server that looks up its name, see
+your real IP address.
+.TP
+.B \-\-proxy\-from\-env
+Without \fB\-\-proxy\fR, take the proxy from \fBALL_PROXY\fR,
+\fBHTTPS_PROXY\fR, or \fBHTTP_PROXY\fR. Railcar ignores them otherwise.
+.TP
+.BI \-\-config " FILE"
+Read settings from \fIFILE\fR, one \fIkey = value\fR a line:
+\fBproxy\fR, \fBproxy\-calls\fR, and \fBproxy\-from\-env\fR, as the options
+above. The default is \fIrailcar.conf\fR in the profile directory. Options on
+the command line win.
+.TP
 .BI \-\-dev\-server " NAME=URL"
 Reach the server \fINAME\fR at \fIURL\fR, for local test networks. Give it
 once for each server.

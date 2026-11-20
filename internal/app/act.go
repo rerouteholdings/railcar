@@ -139,6 +139,17 @@ func act(ctx context.Context, eng *chat.Engine, chatID string, a ui.Action) (str
 		}
 		return msg, nil
 	}
+	if a.Kind == "proxy" {
+		c := eng.Client()
+		if !c.Proxied() {
+			return "Railcar connects directly, with no proxy. Start it with --proxy, or set proxy in railcar.conf, to use one", nil
+		}
+		msg := "Every connection goes through " + c.Proxy() + ", which also looks up hostnames. "
+		if eng.CallsOff() {
+			return msg + "Calls and voice channels are off: start Railcar with --proxy-calls to make them through your homeserver's relay, which then sees your real IP address", nil
+		}
+		return msg + "Calls and voice channels go only through your homeserver's relay, which sees your real IP address", nil
+	}
 	if a.Kind == "move" {
 		if a.Arg == "" || a.Arg2 == "" {
 			return "", errors.New("type :move, the new homeserver, your name there, and its registration code if it needs one")

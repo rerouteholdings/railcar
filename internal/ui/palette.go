@@ -75,6 +75,7 @@ func newCommandPalette(a *App, m *mainView) *commandPalette {
 			}
 			return nil
 		}},
+		{label: "Show the proxy setting", names: []string{"proxy"}, run: func(a *App) tea.Cmd { return a.main.act(a, "proxy", "", "", false) }},
 		{label: "Find a chat", names: []string{"find"}, run: func(a *App) tea.Cmd { return a.main.findChat(a) }},
 		{label: details, names: []string{"details", "info"}, run: func(a *App) tea.Cmd { a.main.toggleDetails(a); return nil }},
 		{label: "Reply to the last message", names: []string{"reply"}, run: func(a *App) tea.Cmd { return a.main.startReply(a) }},

@@ -71,6 +71,20 @@ Railcar keeps each profile's key in the system keychain. Without one, it stops, 
 
 To try the interface without a homeserver, run `./railcar --demo`.
 
+### Use a proxy
+
+Railcar can send every connection through a SOCKS5 or HTTP (CONNECT) proxy, such as Tor's SOCKS port:
+
+```sh
+./railcar --proxy socks5://127.0.0.1:9050
+```
+
+The proxy also looks up hostnames, so Railcar makes no DNS lookups of its own. If it can't reach the proxy, it says so and doesn't connect at all, rather than connecting directly. Add `user:password@` before the host for a proxy that needs them. To keep the setting, put `proxy = socks5://127.0.0.1:9050` in `railcar.conf` in the profile directory, and keep that file readable only by you if it holds a password. `:proxy` shows the setting, without the password.
+
+Railcar ignores the `HTTP_PROXY`, `HTTPS_PROXY`, and `ALL_PROXY` environment variables, so a proxy is never used by accident. Run it with `--proxy-from-env`, or set `proxy-from-env = on`, to use them.
+
+Calls and voice channels are UDP, which these proxies don't carry, so they're off while a proxy is set: a ring shows as a missed call. `--proxy-calls`, or `proxy-calls = on`, turns them back on, going only through your homeserver's relay. That relay, and the DNS server that looks up its name, then see your real IP address.
+
 ## Contributing
 
 Read [CONTRIBUTING.md](CONTRIBUTING.md) first. It explains how Railcar is written from the specification, and the documentation style it follows.

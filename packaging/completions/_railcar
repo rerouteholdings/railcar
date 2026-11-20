@@ -4,6 +4,10 @@ _arguments \
   '--profile[keep the identity, keys, and messages in a directory]:directory:_directories' \
   '--key-file[keep the profile key in a file when there is no keychain]' \
   '--log[write debug lines to a file]:file:_files' \
+  '--proxy[send every connection through a socks5:// or http:// proxy]:URL:' \
+  '--proxy-calls[with a proxy, allow calls through the homeserver relay]' \
+  '--proxy-from-env[take the proxy from ALL_PROXY, HTTPS_PROXY, or HTTP_PROXY]' \
+  '--config[read settings from a file]:file:_files' \
   '*--dev-server[reach a server at a URL, for local test networks]:NAME=URL:' \
   '--demo[run with made-up chats and no network]' \
   '--version[print the version]' \
