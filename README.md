@@ -19,7 +19,7 @@ Railcar is in early development. It has direct chats, group chats, and communiti
 3. Linking devices, group chats, and communities. Done:
    - Linking devices. A new device signs in with a link code and a confirmation code, or with an approval code another device shows, and gets the contact list and every chat. A signed-in device approves new devices, lists them, and removes them.
    - Group chats of up to 25 people: creating them, adding people directly as an admin or by an add-request an admin approves, removing people, admins, leaving, renaming, and topics, with the admin rules every member checks.
-   - Communities on community servers: creating one, joining with a code, text channels with sequence numbers, roles, restricted channels, join codes, history for newcomers, read positions, deletes, timeouts, kicks, and bans. Voice channels are listed, and can't be joined from a terminal.
+   - Communities on community servers: creating one, joining with a code, text channels with sequence numbers, roles, restricted channels, join codes, history for newcomers, read positions, deletes, timeouts, kicks, and bans. Voice channels are listed (phase 5 joins them).
 
    Each works with Reroute's command-line client both ways.
 4. Everything else a chat needs. Done:
@@ -45,6 +45,7 @@ Railcar is in early development. It has direct chats, group chats, and communiti
    - For calls: new relay credentials before the old ones expire (§15.1), a choice of microphone and speakers, and keys to answer, hang up, and mute.
    - Removing and blocking contacts, and unblocking them (§9.6).
    - Coming back as a new device after missing too much (§11.9), re-creating a stuck direct chat, and offering to re-create a chat that's stuck (§11.11).
+   - For communities: a newly linked device joins them from the link bundle, without a code (§7.2), and an owner moves a community to another community server (§16.6).
 
 ## Build
 

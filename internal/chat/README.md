@@ -75,6 +75,8 @@ What it does:
 - Roles, codes, and restricted channels: adding roles ranked just below this identity, assigning them, then adding the member to the restricted groups their roles see now and removing them from the others, with new keys for those groups. A restricted group requires `0xF0A1` and `0xF0A3` from creation on, and is pinned at its first commit when every leaf lists `0xF0A4`, which then adds `0xF0A4` to what it requires (§16.5).
 - Read positions: sent when a channel is read, and taken from the community server every 30 seconds when they're ahead (§16.4).
 - Following a community that moves (§16.6): a `set-home` in the chain, or `409 wrong-home` from the old community server, starts it. Railcar keeps reading the old server until the members group's hub is the new one, then signs in there, registers the members group first and then its other groups, leaves key packages, moves the channels' chats and history to the new server's name, and streams from there.
+- Moving a community as its owner (§16.6): `MoveCommunity` signs the `set-home` without appending it, and asks the new community server with `POST create` and `check`, sending the chain ending in that entry, the home of each entry's signer, and a `community-members` list of the members group's identities signed with this device's key. With the reservation that comes back, it appends the `set-home` on the old server, moves the community in with each text channel's last number, then hands each group's hub over, the members group first, binding the new chain head there: each handoff commit registers the group with the new server, at the epoch it creates, before the old server sequences it (§11.11). Then the owner follows its own move. A refusal before the append changes nothing.
+- A newly linked device (§7.2 step 5): the link bundle lists the identity's communities. The new device signs in to each community server, follows the chain, and leaves key packages, and the community waits until another device of the identity adds it. That device's sync rule adds its identity's devices that have no leaf in the members group, claiming key packages for them at most once a minute, then in each restricted channel's group, and sends them the keys. A device that comes back as a new device rejoins its communities the same way.
 - Moderation: timeouts, kicks, and bans, with Removes of the member's leaves in every group this device is in. After a kick or ban, an admin's Railcar rotates the community metadata key: one entry re-seals every role's name and color, and every name and topic of the channels everyone sees, under a new key, which then goes to the members group (§16.2.4). A moderator without `administrate` leaves that to an admin. Either way, the moderator's Railcar gives every text channel that keeps history a new history key, and each restricted group it's in a new metadata key, and sends each group its keys (§16.5).
 - Voice channels: listed with who's in them, from `voice-state`, and joined through the community server's selective forwarding unit (SFU). See "Calls and voice channels" below.
 
@@ -142,17 +144,16 @@ for ev := range eng.Events() { ... }
 
 ## Not yet
 
-- Moving a community as its owner, and re-creating a community's groups (§16.5, §16.6). A restricted group whose hub the owner doesn't hand over stays on the old community server.
+- Re-creating a community's groups (§16.5).
 - The fork rule for community chains: Railcar follows the community server's chain, and stops at an entry it refuses.
 - Latching a group that hasn't latched when nothing else changes (§7.1). A device change latches it.
-- Communities in link bundles: Railcar sends none, and a linked device doesn't join the ones a bundle lists, so it joins each community again with a code (§7.2 step 5).
 - Moves signed with the recovery code, for an old home that's gone, and the recovery-signed entry that vouches for a move contacts' homeservers missed (§6.6).
 - Sending the moved chain inside group chats (§6.6, step 3): the spec doesn't say in what content. Members who aren't contacts learn of the move when they fetch the chain.
 - Rejoining after a commit this device used up the key of without applying it (§11.9): Railcar restores its MLS state after any failure that follows decrypting a commit, so it doesn't meet one, but it doesn't detect one an older version left either.
-- Communities after coming back as a new device: the device rejoins its chats, and its communities only with a code.
+- Removing this identity's own removed devices' leaves from community groups: members remove them as for anyone's (§16.5), but the identity's other devices don't do it first.
 - Offering re-creation when a Remove held for a removed device has failed for an hour counts as failed commits, not separately.
 - Casting media in a call or a voice channel (§15.3): Railcar receives casts, and never sends one.
-- Rekeying a visit to a voice channel with a new generation (§16.4): a visit keeps generation 0.
+- Rekeying a visit to a voice channel with a new generation (§16.4): a visit keeps generation 0. The spec's rule for when is still proposed.
 - Checking a message against the sender's leaf in the epoch it was sent in, when the leaf changed since. Such a message is dropped for now.
 
 ## Tests
@@ -192,9 +193,15 @@ go test ./internal/chat -run E2E -v
 
 - `TestE2ERailcarCalls`: two Railcar identities on two servers call each other, and each hears the other's tone, decrypted from SFrame; a mute shows and silences; a declined call and a missed call leave their lines; and a group call of three, a full mesh, goes on when the caller leaves.
 - `TestE2EInteropCalls`: Railcar calls Reroute, and Reroute calls Railcar; each hears the other, and each sees the other muted.
-- `TestE2ECallsRelayOnly`: with direct calls off, calls between Railcar identities and with Reroute, and a voice channel, go only through each homeserver's coturn relay. It needs coturn's `turnserver`, and skips without it.
+- `TestE2ECallsRelayOnly`: with direct calls off, calls between Railcar identities and with Reroute, and a voice channel, go only through each homeserver's coturn relay, and each side fetches new relay credentials partway through. It needs coturn's `turnserver`, and skips without it.
 - `TestE2ERailcarVoice`: two Railcar identities meet in a voice channel through the SFU and hear each other, a mute shows, and a third joins late and gets both keys again.
 - `TestE2EInteropVoice`: Railcar and Reroute meet in a voice channel in a community Reroute created, and each hears the other; Reroute, deafened, is in it first, and Railcar joins late and gets its key.
+- `TestE2ERailcarContacts`: between Railcar identities on two servers, removing a contact ends the chat on both sides and on the remover's second device; they become contacts again in a new chat; a block isn't announced, and the blocked person's messages and new request go nowhere; unblocking lets a request through; blocking a waiting request drops it.
+- `TestE2EInteropContacts`: Railcar removes and blocks Reroute identities, whose later messages and requests go nowhere, and Reroute's block drops Railcar's request.
+- `TestE2ERailcarRejoin` and `TestE2EInteropRejoin`: a Railcar device comes back as a new device, keeping its history, and a Railcar contact adds it back to their direct chat and to a group whose third member isn't the rejoiner's contact, or Reroute adds it back; then Reroute comes back as a new device, and Railcar adds it. A second rejoin within a day doesn't happen on its own.
+- `TestE2ERailcarStuckDirect` and `TestE2EInteropRecreateDirect`: a direct chat whose commits have failed for an hour offers re-creating it once, and re-creating it carries the conversation on, with Railcar and with Reroute.
+- `TestE2ERailcarLinkCommunities` and `TestE2EInteropLinkCommunities`: a newly linked device joins its identity's community from the link bundle, and the other device adds it to the members group and a restricted channel's group and sends the keys, Railcar to Railcar and both ways with Reroute; after coming back as a new device, it's added again.
+- `TestE2EInteropMoveCommunity`: Railcar's owner moves a community with a restricted channel to another community server, after one the new server refuses; a Railcar member and a Reroute member follow, numbering goes on, and messages go every way there.
 
 The call tests use tones for microphones, and measure what each side hears with the Goertzel algorithm.
 
