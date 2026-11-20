@@ -159,7 +159,7 @@ for t in $ONLY; do
   install -m 644 LICENSE PATENTS.md README.md docs/railcar.1 "$d/"
   install -m 644 packaging/completions/railcar.bash packaging/completions/_railcar packaging/completions/railcar.fish "$d/completions/"
   find "$d" -exec touch -h -d "@$SOURCE_DATE_EPOCH" {} + 2>/dev/null \
-    || find "$d" -exec touch -h -t "$(date -u -r "$SOURCE_DATE_EPOCH" +%Y%m%d%H%M.%S)" {} +
+    || find "$d" -exec touch -h -t "$(date -r "$SOURCE_DATE_EPOCH" +%Y%m%d%H%M.%S)" {} +
   "${TAR[@]}" -czf "$OUT/$name.tar.gz" -C "$STAGE/tar" "$name"
 done
 [ ${#built[@]} -gt 0 ] || { echo "nothing was built" >&2; exit 1; }
