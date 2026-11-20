@@ -440,6 +440,7 @@ func (e *Engine) streamCommunity(ctx context.Context, server string) {
 			}
 			switch ev.Kind {
 			case client.EventConnected:
+				e.voice.connected(server, ev.Send)
 				go func() {
 					e.mu.Lock()
 					defer e.mu.Unlock()
@@ -451,6 +452,11 @@ func (e *Engine) streamCommunity(ctx context.Context, server string) {
 				e.handleCommunity(ctx, server, ev.Item)
 			case client.EventVoice:
 				e.voiceFrame(server, ev.Frame)
+				e.voice.frame(server, ev.Frame)
+			case client.EventError:
+				e.voice.frame(server, ev.Frame)
+			case client.EventDisconnected:
+				e.voice.disconnected(server)
 			case client.EventStopped:
 				e.log.Info("chat: a community stream stopped", "server", server, "err", ev.Err)
 				return

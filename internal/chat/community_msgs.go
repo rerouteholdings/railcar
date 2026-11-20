@@ -803,6 +803,13 @@ func (e *Engine) applyChannel(ctx context.Context, cm *Community, g *CGroup, cha
 	if live && st.TimedOut(from, am.TS) {
 		return nil // a timed-out member's message that got through (§16.7)
 	}
+	if t == CVoiceKey || t == CVoiceMute {
+		// Voice channel keys and mute state: never messages (§16.4).
+		if live {
+			return e.voice.content(cm.Server, channel, from, t, am)
+		}
+		return nil
+	}
 	if t == CTyping {
 		// Ephemeral: shown, and never kept in history (§13.3, §7.3).
 		if c, err := parseContent(t, am.C); err == nil && live {

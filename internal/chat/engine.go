@@ -54,6 +54,9 @@ const (
 	// EventCall: this device's call, or its rings, changed (§15.2). Call
 	// is nil when there's no call.
 	EventCall
+	// EventVoice: this device's place in a voice channel changed
+	// (§16.4). Voice is nil once it left.
+	EventVoice
 )
 
 // Event is something that happened.
@@ -73,6 +76,8 @@ type Event struct {
 	// Call and Rings are this device's call and unanswered rings.
 	Call  *CallInfo
 	Rings []CallRing
+	// Voice is this device's voice channel.
+	Voice *VoiceInfo
 }
 
 // Options adjust an Engine.
@@ -119,8 +124,10 @@ type Engine struct {
 	// ppl holds presence and public profiles (§13).
 	ppl people
 
-	// calls is this device's call (§15.2).
+	// calls is this device's call (§15.2), and voice its voice channel
+	// (§16.4).
 	calls *calls
+	voice *voice
 
 	evMu   sync.Mutex
 	events chan Event
@@ -161,6 +168,7 @@ func New(c *client.Client, opts Options) (*Engine, error) {
 	}
 	e.loadPeople()
 	e.calls = newCalls(e, opts.Calls)
+	e.voice = newVoice(e, opts.Calls)
 	return e, nil
 }
 

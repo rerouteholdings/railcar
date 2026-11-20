@@ -74,6 +74,10 @@ type Event struct {
 	Err      error          // EventError, EventDisconnected, EventStopped
 	Retry    time.Duration  // EventDisconnected: the wait before reconnecting
 	Attempts int            // EventDisconnected: failed connections in a row
+	// Send writes a frame on this connection, for EventConnected: a
+	// community server's voice signaling goes this way. It fails once the
+	// connection is gone.
+	Send func(v any) error
 }
 
 // StreamOptions adjust Stream.
@@ -356,7 +360,7 @@ func streamOnce(ctx context.Context, src streamSource, after *string, restart <-
 		switch f.T {
 		case "ready":
 			ready = true
-			if !emit(Event{Kind: EventConnected, Gap: f.Gap}) {
+			if !emit(Event{Kind: EventConnected, Gap: f.Gap, Send: write}) {
 				return ctx.Err()
 			}
 		case "item":
