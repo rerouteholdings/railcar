@@ -41,6 +41,16 @@ func (e *Engine) followMove(ctx context.Context, cm *Community) {
 	if err != nil || ext.Hub != to {
 		return // the hub hasn't been handed over yet
 	}
+	// The other groups' handoff commits are on the old server only: apply
+	// what it holds before switching (§11.11).
+	for _, id := range slices.Sorted(maps.Keys(cm.Groups)) {
+		if id != cm.MembersGroup {
+			e.cfetchMissed(ctx, cm, cm.Groups[id])
+			if err := e.cdrain(ctx, cm, cm.Groups[id]); err != nil {
+				e.log.Info("chat: a restricted group's commits before the move", "err", err)
+			}
+		}
+	}
 	conn := e.c.Community(to)
 	if err := conn.SignIn(ctx); err != nil {
 		e.log.Info("chat: signing in to the community's new server", "err", err)
