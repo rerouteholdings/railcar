@@ -16,6 +16,7 @@ import (
 	"github.com/pion/webrtc/v4"
 
 	"github.com/rerouteholdings/railcar/internal/media/rtc"
+	"github.com/rerouteholdings/railcar/internal/mls"
 	"github.com/rerouteholdings/railcar/internal/tieroute/client"
 	"github.com/rerouteholdings/railcar/internal/tieroute/sframe"
 	"github.com/rerouteholdings/railcar/internal/tieroute/wire"
@@ -829,4 +830,71 @@ func (r voiceRing) Kind(kid uint64) string {
 		return "video"
 	}
 	return "voice"
+}
+
+// leavesGone notes a commit this device applied to a community group: if
+// it removed a leaf, a device in a voice channel the group carries
+// replaces its base key (§16.4, "Replacing the base key"). The caller
+// holds e.mu.
+func (e *Engine) leavesGone(cm *Community, g *CGroup, before, after *mls.State) {
+	if before == nil || after == nil {
+		return
+	}
+	still := map[string]bool{}
+	for _, m := range after.Members {
+		still[string(m.Identity)] = true
+	}
+	for _, m := range before.Members {
+		if !still[string(m.Identity)] {
+			server, gid := cm.Server, g.ID
+			e.voice.do(func() { e.voice.rekey(server, gid) })
+			return
+		}
+	}
+}
+
+// rekey replaces this device's base key in its voice channel, if the
+// group gid carries the channel: the next generation, a new random key
+// sent in the group, then the media switches to it. After generation
+// 255, it starts a new visit (§16.4).
+func (v *voice) rekey(server, gid string) {
+	c := v.cur
+	if c == nil || c.server != server || c.ended != "" || !c.joined || c.media == nil {
+		return
+	}
+	e := v.e
+	e.mu.Lock()
+	carried := false
+	if cm := e.st.Communities[server]; cm != nil {
+		if chain, err := e.communityChain(cm); err == nil {
+			if ch := chain.State().Channels[c.channel]; ch != nil {
+				g := e.groupFor(cm, ch)
+				carried = g != nil && g.ID == gid
+			}
+		}
+	}
+	e.mu.Unlock()
+	if !carried {
+		return
+	}
+	if c.gen == 255 {
+		chat := c.chat
+		v.leave(c, "")
+		if err := v.join(chat); err != nil {
+			v.e.log.Info("chat: a new visit after the last generation", "err", err)
+		}
+		return
+	}
+	base := make([]byte, 32)
+	rand.Read(base)
+	c.base, c.gen = base, c.gen+1
+	if err := v.sendKey(c, false); err != nil {
+		v.e.log.Info("chat: sending a new voice key", "err", err)
+	}
+	s, err := sframe.NewSender(c.base, sframe.VoiceKID(c.visit, c.gen, sframe.StreamVoice))
+	if err != nil {
+		return
+	}
+	c.media.SetSender(s)
+	v.e.log.Debug("chat: replaced the voice key", "generation", c.gen)
 }

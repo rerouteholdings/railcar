@@ -133,6 +133,30 @@ func TestE2ERailcarVoice(t *testing.T) {
 	if c, _ := kat.e.Chat(lounge); len(c.InVoice) != 2 {
 		t.Errorf("Kat's list shows %d in Lounge, not 2", len(c.InVoice))
 	}
+
+	// Kat kicks Lee: his leaves leave the members group, which carries
+	// Lounge, so Ravi replaces his voice key with generation 1 (§16.4).
+	// Kat joins again, and hears Ravi under it.
+	if err := kat.e.Kick(ctx, "c.test", lee.e.Client().ID()); err != nil {
+		t.Fatal(err)
+	}
+	gen := func() uint8 {
+		var g uint8
+		ravi.e.voice.doWait(func() error {
+			if c := ravi.e.voice.cur; c != nil {
+				g = c.gen
+			}
+			return nil
+		})
+		return g
+	}
+	waitFor(t, "Ravi's new voice key", func() bool { return gen() == 1 })
+	if err := kat.e.JoinVoice(ctx, lounge); err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, "Kat to get Ravi's new key", func() bool { return keyedOthers(kat.e) == 1 })
+	time.Sleep(2 * time.Second)
+	hears(t, "kat, after Ravi's new key", kat.tone.record(2*time.Second), []float64{660}, 440)
 }
 
 // TestE2EInteropVoice has Railcar and Reroute's command-line client meet

@@ -508,6 +508,7 @@ func (e *Engine) cprocessCommit(ctx context.Context, cm *Community, g *CGroup, b
 		}
 	}
 	g.Epoch, g.Members = after.Epoch, members(after)
+	e.leavesGone(cm, g, before, after)
 	if !after.Active {
 		if g.See == nil {
 			e.removedFromCommunity(ctx, cm, "You were removed from the community")
@@ -835,6 +836,7 @@ func (e *Engine) ccommit(ctx context.Context, cm *Community, g *CGroup, o ccommi
 	}
 	g.Applied[res.Epoch] = h[:]
 	g.Epoch, g.Members = after.Epoch, members(after)
+	e.leavesGone(cm, g, st, after)
 	return e.save()
 }
 
