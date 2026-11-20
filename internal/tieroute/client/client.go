@@ -13,6 +13,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/rerouteholdings/railcar/internal/proxy"
 	"github.com/rerouteholdings/railcar/internal/tieroute/discovery"
 	"github.com/rerouteholdings/railcar/internal/tieroute/identity"
 	"github.com/rerouteholdings/railcar/internal/tieroute/sig"
@@ -36,14 +37,31 @@ type Options struct {
 	// DeviceName labels this device in its chain and session lists, such
 	// as "Kat's laptop".
 	DeviceName string
+	// Proxy sends every connection through a SOCKS5 or HTTP CONNECT
+	// proxy, which also resolves hostnames. The zero value connects
+	// directly. The environment's proxy variables are never read here.
+	Proxy proxy.Config
 }
 
 func (o Options) httpClient() *http.Client {
 	if o.HTTP != nil {
 		return o.HTTP
 	}
-	return &http.Client{Timeout: 30 * time.Second}
+	return o.Proxy.HTTPClient(30 * time.Second)
 }
+
+// resolver is a discovery resolver that makes no DNS lookups of its own
+// while a proxy is set.
+func (o Options) resolver() *discovery.Resolver {
+	return &discovery.Resolver{HTTP: o.httpClient(), Origins: o.Origins, NoDNS: o.Proxy.Set()}
+}
+
+// Proxied reports whether connections go through a proxy.
+func (c *Client) Proxied() bool { return c.opts.Proxy.Set() }
+
+// Proxy is the proxy connections go through, with its password hidden, or
+// "none".
+func (c *Client) Proxy() string { return c.opts.Proxy.String() }
 
 // Records in the profile.
 const (
@@ -111,7 +129,7 @@ func newClient(p *store.Profile, opts Options) *Client {
 	c := &Client{
 		opts:     opts,
 		profile:  p,
-		resolver: &discovery.Resolver{HTTP: opts.httpClient(), Origins: opts.Origins},
+		resolver: opts.resolver(),
 		clock:    &Clock{},
 		restart:  make(chan struct{}),
 	}

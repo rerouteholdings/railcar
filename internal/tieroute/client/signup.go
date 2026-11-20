@@ -9,7 +9,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/rerouteholdings/railcar/internal/tieroute/discovery"
 	"github.com/rerouteholdings/railcar/internal/tieroute/identity"
 	"github.com/rerouteholdings/railcar/internal/tieroute/store"
 	"github.com/rerouteholdings/railcar/internal/tieroute/wire"
@@ -46,7 +45,7 @@ func NewSignup(ctx context.Context, server string, opts Options) (*Signup, error
 	if err := identity.CheckServerName(server); err != nil {
 		return nil, err
 	}
-	r := &discovery.Resolver{HTTP: opts.httpClient(), Origins: opts.Origins}
+	r := opts.resolver()
 	doc, err := r.ServerDoc(ctx, server)
 	if err != nil {
 		return nil, err
@@ -77,7 +76,7 @@ func (s *Signup) Server() string { return s.server }
 // PublicInvite returns the registration code the server publishes in its
 // server document, if any (§8.2).
 func PublicInvite(ctx context.Context, server string, opts Options) (string, error) {
-	r := &discovery.Resolver{HTTP: opts.httpClient(), Origins: opts.Origins}
+	r := opts.resolver()
 	doc, err := r.ServerDoc(ctx, server)
 	if err != nil {
 		return "", err
@@ -117,7 +116,7 @@ func (s *Signup) Register(ctx context.Context, profileDir, handle, invite string
 	} else if s.profile.Dir() != profileDir {
 		return nil, errors.New("client: a signup keeps one profile directory")
 	}
-	r := &discovery.Resolver{HTTP: s.opts.httpClient(), Origins: s.opts.Origins}
+	r := s.opts.resolver()
 	doc, err := r.ServerDoc(ctx, s.server)
 	if err != nil {
 		return nil, err

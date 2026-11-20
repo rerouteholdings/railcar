@@ -18,6 +18,7 @@ require (
 	github.com/zalando/go-keyring v0.2.8
 	golang.org/x/crypto v0.59.0
 	golang.org/x/image v0.47.0
+	golang.org/x/net v0.62.0
 	golang.org/x/text v0.44.0
 	rsc.io/qr v0.2.0
 )
@@ -64,7 +65,6 @@ require (
 	github.com/test-go/testify v1.1.4 // indirect
 	github.com/wlynxg/anet v0.0.5 // indirect
 	github.com/xo/terminfo v1.0.0 // indirect
-	golang.org/x/net v0.62.0 // indirect
 	golang.org/x/sync v0.25.0 // indirect
 	golang.org/x/sys v0.50.0 // indirect
 	golang.org/x/time v0.14.0 // indirect

@@ -99,6 +99,9 @@ var ErrNoVersion2 = errors.New("discovery: the server doesn't speak wire version
 type Resolver struct {
 	// HTTP is the client to use; nil means http.DefaultClient.
 	HTTP *http.Client
+	// NoDNS skips the DNS lookups the resolver would make itself, for a
+	// client whose connections go through a proxy that resolves names.
+	NoDNS bool
 	// Origins maps server names to the origins to reach them at, such as
 	// "a.test" to "http://127.0.0.1:18471". It's for local test networks,
 	// which are an implementation feature, not protocol (§5.1). A server

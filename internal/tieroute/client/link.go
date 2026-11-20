@@ -14,7 +14,6 @@ import (
 	"time"
 
 	"github.com/rerouteholdings/railcar/internal/tieroute/codes"
-	"github.com/rerouteholdings/railcar/internal/tieroute/discovery"
 	"github.com/rerouteholdings/railcar/internal/tieroute/identity"
 	"github.com/rerouteholdings/railcar/internal/tieroute/sig"
 	"github.com/rerouteholdings/railcar/internal/tieroute/store"
@@ -256,7 +255,7 @@ func findIdentity(ctx context.Context, server, handle string, opts Options, move
 	if err := identity.CheckHandle(handle); err != nil {
 		return nil, err
 	}
-	r := &discovery.Resolver{HTTP: opts.httpClient(), Origins: opts.Origins}
+	r := opts.resolver()
 	doc, err := r.ServerDoc(ctx, server)
 	if err != nil {
 		return nil, err

@@ -95,6 +95,9 @@ func (r *Resolver) LookupHandle(ctx context.Context, handle string) (HandleRecor
 			return rec, rec.check()
 		}
 	}
+	if r.NoDNS {
+		return HandleRecord{}, fmt.Errorf("%w: no HTTPS document, and no DNS lookups through a proxy", ErrNoHandle)
+	}
 	txts, err := net.DefaultResolver.LookupTXT(ctx, "_tieroute."+handle)
 	if err != nil {
 		return HandleRecord{}, fmt.Errorf("%w: %v", ErrNoHandle, err)
