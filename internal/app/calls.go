@@ -5,6 +5,7 @@ import (
 	"errors"
 
 	"github.com/rerouteholdings/railcar/internal/chat"
+	"github.com/rerouteholdings/railcar/internal/media/audio"
 	"github.com/rerouteholdings/railcar/internal/ui"
 )
 
@@ -129,4 +130,29 @@ func callBar(eng *chat.Engine) *ui.CallBar {
 		b.Waiting = append(b.Waiting, "@"+eng.Handle(r.From))
 	}
 	return b
+}
+
+// AudioDevices implements ui.Backend.
+func (b *Backend) AudioDevices(context.Context) (ui.AudioSetup, error) {
+	eng, err := b.engine()
+	if err != nil {
+		return ui.AudioSetup{}, err
+	}
+	var out ui.AudioSetup
+	out.Microphone, out.Speaker = eng.AudioDevices()
+	ds, err := audio.List()
+	if err != nil {
+		return out, errors.New("Railcar couldn't list the audio devices: " + err.Error())
+	}
+	out.Microphones, out.Speakers = ds.Microphones, ds.Speakers
+	return out, nil
+}
+
+// SetAudioDevices implements ui.Backend.
+func (b *Backend) SetAudioDevices(_ context.Context, mic, speakers string) error {
+	eng, err := b.engine()
+	if err != nil {
+		return err
+	}
+	return eng.SetAudioDevices(mic, speakers)
 }

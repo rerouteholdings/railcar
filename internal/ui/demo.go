@@ -57,6 +57,8 @@ type DemoBackend struct {
 	// call is the demo's call or voice channel.
 	call *demoCall
 	rang bool
+	// mic and speaker are the demo's chosen audio devices.
+	mic, speaker string
 }
 
 // The words the demo draws recovery codes from. They're from the BIP-39

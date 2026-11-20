@@ -212,6 +212,10 @@ type state struct {
 	// DirectCalls allows calls and voice channels to connect directly,
 	// which shows IP addresses. Off by default (§15.2).
 	DirectCalls bool `json:"direct_calls,omitempty"`
+	// Microphone and Speakers name the audio devices for calls and voice
+	// channels. Empty is the system's default.
+	Microphone string `json:"microphone,omitempty"`
+	Speakers   string `json:"speakers,omitempty"`
 }
 
 func loadState(p *store.Profile) (*state, error) {

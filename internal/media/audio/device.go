@@ -6,12 +6,13 @@ import (
 	"errors"
 	"fmt"
 	"sync"
+	"unsafe"
 
 	"github.com/gen2brain/malgo"
 )
 
-// Device is the machine's default microphone and speakers, through
-// miniaudio. The microphone is a Source, and the speakers play a Mixer.
+// Device is a microphone and speakers, through miniaudio. The microphone
+// is a Source, and the speakers play a Mixer.
 type Device struct {
 	ctx      *malgo.AllocatedContext
 	capture  *malgo.Device
@@ -25,7 +26,12 @@ type Device struct {
 
 // Open starts the default microphone and speakers. mix is what the
 // speakers play.
-func Open(mix *Mixer) (*Device, error) {
+func Open(mix *Mixer) (*Device, error) { return OpenNamed(mix, "", "") }
+
+// OpenNamed starts the microphone and speakers with these names, as List
+// gives them. An empty name, or one that isn't connected now, is the
+// system's default.
+func OpenNamed(mix *Mixer, mic, speakers string) (*Device, error) {
 	ctx, err := malgo.InitContext(nil, malgo.ContextConfig{}, nil)
 	if err != nil {
 		return nil, fmt.Errorf("audio: %w", err)
@@ -33,6 +39,10 @@ func Open(mix *Mixer) (*Device, error) {
 	d := &Device{ctx: ctx, frames: make(chan []int16, 10)}
 
 	cc := malgo.DefaultDeviceConfig(malgo.Capture)
+	if id := find(ctx, malgo.Capture, mic); id != nil {
+		cc.Capture.DeviceID = id
+		defer cfree(id)
+	}
 	cc.Capture.Format = malgo.FormatS16
 	cc.Capture.Channels = 1
 	cc.SampleRate = SampleRate
@@ -44,6 +54,10 @@ func Open(mix *Mixer) (*Device, error) {
 	}
 
 	pc := malgo.DefaultDeviceConfig(malgo.Playback)
+	if id := find(ctx, malgo.Playback, speakers); id != nil {
+		pc.Playback.DeviceID = id
+		defer cfree(id)
+	}
 	pc.Playback.Format = malgo.FormatS16
 	pc.Playback.Channels = 1
 	pc.SampleRate = SampleRate
@@ -130,4 +144,61 @@ func (d *Device) Close() {
 		d.ctx.Free()
 		d.ctx = nil
 	}
+}
+
+// Devices are the microphones and speakers connected now, by name.
+type Devices struct {
+	Microphones []string
+	Speakers    []string
+}
+
+// List gives the microphones and speakers connected now.
+func List() (Devices, error) {
+	ctx, err := malgo.InitContext(nil, malgo.ContextConfig{}, nil)
+	if err != nil {
+		return Devices{}, fmt.Errorf("audio: %w", err)
+	}
+	defer func() {
+		ctx.Uninit()
+		ctx.Free()
+	}()
+	var out Devices
+	for _, kind := range []malgo.DeviceType{malgo.Capture, malgo.Playback} {
+		infos, err := ctx.Devices(kind)
+		if err != nil {
+			return Devices{}, fmt.Errorf("audio: listing devices: %w", err)
+		}
+		seen := map[string]bool{}
+		for _, in := range infos {
+			name := in.Name()
+			if name == "" || seen[name] {
+				continue
+			}
+			seen[name] = true
+			if kind == malgo.Capture {
+				out.Microphones = append(out.Microphones, name)
+			} else {
+				out.Speakers = append(out.Speakers, name)
+			}
+		}
+	}
+	return out, nil
+}
+
+// find returns a C copy of the ID of the device with this name, which the
+// caller frees with cfree, or nil for the default.
+func find(ctx *malgo.AllocatedContext, kind malgo.DeviceType, name string) unsafe.Pointer {
+	if name == "" {
+		return nil
+	}
+	infos, err := ctx.Devices(kind)
+	if err != nil {
+		return nil
+	}
+	for _, in := range infos {
+		if in.Name() == name {
+			return in.ID.Pointer()
+		}
+	}
+	return nil
 }

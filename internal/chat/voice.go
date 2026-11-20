@@ -295,7 +295,7 @@ func (v *voice) join(chat string) error {
 		return err
 	}
 	if c.audio.Source == nil {
-		if c.audio, err = v.opts.open(); err != nil {
+		if c.audio, err = e.openAudio(v.opts); err != nil {
 			return fmt.Errorf("chat: the microphone and speakers: %w", err)
 		}
 	}

@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"context"
 	"errors"
 	"math/rand/v2"
 	"time"
@@ -193,4 +194,23 @@ func (d *DemoBackend) ringLater() {
 			}
 		})
 	})
+}
+
+// AudioDevices implements Backend.
+func (d *DemoBackend) AudioDevices(context.Context) (AudioSetup, error) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	return AudioSetup{
+		Microphones: []string{"Built-in microphone", "USB headset"},
+		Speakers:    []string{"Built-in speakers", "USB headset"},
+		Microphone:  d.mic, Speaker: d.speaker,
+	}, nil
+}
+
+// SetAudioDevices implements Backend.
+func (d *DemoBackend) SetAudioDevices(_ context.Context, mic, speakers string) error {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	d.mic, d.speaker = mic, speakers
+	return nil
 }

@@ -48,6 +48,7 @@ const (
 	overlayReceipts
 	overlayReport
 	overlayPassphrase
+	overlayAudio
 )
 
 // narrowWidth is the width under which the main view shows one pane at a
@@ -103,6 +104,7 @@ type mainView struct {
 	// in the narrow layout.
 	narrowDetails bool
 	overlay       overlay
+	audio         audioState
 	// picker is the file picker for sending a file to pickChat.
 	picker   filepicker.Model
 	pickChat string
@@ -790,6 +792,9 @@ func (m *mainView) update(a *App, msg tea.Msg) tea.Cmd {
 	case approvingMsg, approvalTickMsg, approvedMsg, devicesMsg:
 		cmd, _ := m.devicesUpdate(a, msg)
 		return cmd
+	case audioMsg, audioSetMsg:
+		m.audioUpdate(msg)
+		return nil
 	case typingOffMsg:
 		if msg.seq == m.typingSeq && msg.chat == m.typingChat {
 			return m.stopTyping(a)
@@ -873,6 +878,8 @@ func (m *mainView) keyPress(a *App, msg tea.KeyPressMsg) tea.Cmd {
 		return m.addDeviceKey(a, msg)
 	case overlayDevices:
 		return m.devicesKey(a, msg)
+	case overlayAudio:
+		return m.audioKey(a, msg)
 	case overlayInvite:
 		if key.Matches(msg, k.Back) || msg.String() == "enter" || msg.String() == "q" {
 			m.overlay = overlayNone
@@ -1158,6 +1165,8 @@ func (m *mainView) view(a *App) string {
 		return overlayOn(screen, m.approvalCodeView(a), a.width, a.height)
 	case overlayDevices:
 		return overlayOn(screen, m.devicesView(a), a.width, a.height)
+	case overlayAudio:
+		return overlayOn(screen, m.audioView(a), a.width, a.height)
 	case overlayNewGroup:
 		return overlayOn(screen, m.groupView(a), a.width, a.height)
 	}

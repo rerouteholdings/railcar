@@ -140,16 +140,37 @@ type CallOptions struct {
 	Loopback bool
 }
 
-func (o CallOptions) open() (AudioIO, error) {
+// openAudio opens the microphone and speakers the user chose, or the
+// system's defaults.
+func (e *Engine) openAudio(o CallOptions) (AudioIO, error) {
 	if o.Audio != nil {
 		return o.Audio()
 	}
+	mic, spk := e.AudioDevices()
 	mix := audio.NewMixer()
-	d, err := audio.Open(mix)
+	d, err := audio.OpenNamed(mix, mic, spk)
 	if err != nil {
 		return AudioIO{}, err
 	}
 	return AudioIO{Source: d, Mix: mix, Close: d.Close}, nil
+}
+
+// AudioDevices names the microphone and speakers chosen for calls and
+// voice channels. Empty is the system's default.
+func (e *Engine) AudioDevices() (mic, speakers string) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	return e.st.Microphone, e.st.Speakers
+}
+
+// SetAudioDevices chooses the microphone and speakers for calls and voice
+// channels, by the names audio.List gives. Empty is the system's
+// default. A call or voice channel going on keeps the devices it has.
+func (e *Engine) SetAudioDevices(mic, speakers string) error {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	e.st.Microphone, e.st.Speakers = mic, speakers
+	return e.save()
 }
 
 // callDev is a device in a call.
@@ -418,7 +439,7 @@ func (cs *calls) newCall(chat string, id []byte, group bool) (*call, error) {
 	if err != nil {
 		return nil, err
 	}
-	aio, err := cs.opts.open()
+	aio, err := e.openAudio(cs.opts)
 	if err != nil {
 		return nil, fmt.Errorf("chat: the microphone and speakers: %w", err)
 	}

@@ -141,6 +141,15 @@ type Backend interface {
 	// chats follow (§11.9).
 	RemoveDevice(ctx context.Context, key string) error
 
+	// AudioDevices lists the microphones and speakers connected now, and
+	// the ones chosen for calls and voice channels.
+	AudioDevices(ctx context.Context) (AudioSetup, error)
+
+	// SetAudioDevices chooses the microphone and speakers by name, and
+	// keeps the choice in the profile. An empty name is the system's
+	// default.
+	SetAudioDevices(ctx context.Context, mic, speakers string) error
+
 	// Contacts lists the identity's contacts, for choosing people to put
 	// in a group chat.
 	Contacts(ctx context.Context) ([]Member, error)
@@ -267,6 +276,17 @@ type Device struct {
 	Added time.Time
 	// This is true for the device Railcar is running on.
 	This bool
+}
+
+// AudioSetup is the audio devices for calls and voice channels.
+type AudioSetup struct {
+	// Microphones and Speakers are connected now, by name.
+	Microphones []string
+	Speakers    []string
+	// Microphone and Speaker are the chosen ones. Empty is the system's
+	// default.
+	Microphone string
+	Speaker    string
 }
 
 // Identity is the signed-in identity, as the interface shows it.

@@ -3,6 +3,8 @@ package ui
 import (
 	"strings"
 	"testing"
+
+	tea "charm.land/bubbletea/v2"
 )
 
 // TestCallBar calls Ravi in the demo: the call bar shows the call, its
@@ -40,5 +42,22 @@ func TestVoiceBar(t *testing.T) {
 	runCommand(a, b, "leave-voice")
 	if a.main.call != nil {
 		t.Fatal("the voice bar is still there")
+	}
+}
+
+// TestAudioDevices chooses a microphone in the demo.
+func TestAudioDevices(t *testing.T) {
+	a, b := started(t, 120, 40)
+	runCommand(a, b, "audio-devices")
+	if a.main.overlay != overlayAudio || !strings.Contains(plain(a), "USB headset") || !strings.Contains(plain(a), "System default  (chosen)") {
+		t.Fatalf("the audio devices:\n%s", plain(a))
+	}
+	send(a, b, press('j'), tea.KeyPressMsg{Code: tea.KeyEnter})
+	if s, _ := b.AudioDevices(t.Context()); s.Microphone != "Built-in microphone" {
+		t.Fatalf("the microphone is %q", s.Microphone)
+	}
+	send(a, b, tea.KeyPressMsg{Code: tea.KeyEscape})
+	if a.main.overlay != overlayNone {
+		t.Fatal("Esc didn't close it")
 	}
 }

@@ -203,6 +203,7 @@ func callCommands(m *mainView) []command {
 			cmds = append(cmds, command{label: "Join " + ch.Title, names: []string{"join-voice"}, run: act("join-voice")})
 		}
 	}
+	cmds = append(cmds, command{label: "Choose the microphone and speakers", names: []string{"audio-devices", "audio"}, run: func(a *App) tea.Cmd { return a.main.openAudio(a) }})
 	cmds = append(cmds, argCommand("Allow direct calls, which show your IP address: on or off", "direct-calls", "direct-calls", "on or off", false))
 	return cmds
 }
