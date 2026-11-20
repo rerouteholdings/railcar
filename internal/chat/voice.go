@@ -115,7 +115,7 @@ type voice struct {
 	queue   []func()
 	wake    chan struct{}
 	started bool
-	sends   map[string]func(any) error // each community stream's writer
+	sends   map[string]func(any) error  // each community stream's writer
 	keys    map[string]map[uint64]*vkey // by channel chat ID, then KID
 	states  map[string][]vstate         // the latest voice-state, by channel chat ID
 	mutes   map[string]map[uint32]VoiceMute
@@ -560,7 +560,9 @@ func (v *voice) frame(server string, raw jsontext.Value) {
 	if f.T == "error" && !strings.HasPrefix(f.Ref.T, "voice-") {
 		return
 	}
-	v.do(func() { v.handleFrame(server, f.T, f.Channel, f.Visit, f.SDP, f.Data, f.In, f.From, f.To, f.Error, f.Msg, f.Ref.T, f.Ref.Visit) })
+	v.do(func() {
+		v.handleFrame(server, f.T, f.Channel, f.Visit, f.SDP, f.Data, f.In, f.From, f.To, f.Error, f.Msg, f.Ref.T, f.Ref.Visit)
+	})
 }
 
 func (v *voice) handleFrame(server, t string, channel uint64, vis uint32, sdp, data string, in []vstate, from, to uint64, code, msg, refT string, refVisit uint32) {
