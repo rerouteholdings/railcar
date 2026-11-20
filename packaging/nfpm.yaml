@@ -82,3 +82,8 @@ contents:
     dst: /usr/share/doc/railcar/copyright
     file_info: { mode: 0644 }
     packager: deb
+  - src: LICENSE
+    dst: /usr/share/licenses/railcar/LICENSE
+    type: license
+    file_info: { mode: 0644 }
+    packager: rpm
