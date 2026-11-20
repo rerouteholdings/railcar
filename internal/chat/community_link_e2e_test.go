@@ -79,4 +79,23 @@ func TestE2ERailcarLinkCommunities(t *testing.T) {
 	if !slices.ContainsFunc(kat2.bodies(back), func(s string) bool { return strings.HasSuffix(s, ":crew only, after the new device") }) {
 		t.Errorf("the new device's #backroom: %v", kat2.bodies(back))
 	}
+
+	// The second device comes back as a new device (§11.9), and the first
+	// adds it to the community again.
+	if err := kat2.e.Rejoin(ctx); err != nil {
+		t.Fatal(err)
+	}
+	kat.syncDevices(func() { kat2.sync() })
+	until(t, "the new key is back in the community", func() bool {
+		all(kat, kat2, ravi)
+		cm := kat2.e.st.Communities["c.test"]
+		return cm != nil && !cm.Linking && len(cm.Groups) == 2
+	})
+	if _, err := ravi.e.SendText(ctx, gen.ID, "after the new key", ""); err != nil {
+		t.Fatal(err)
+	}
+	all(kat2, ravi)
+	if !slices.ContainsFunc(kat2.bodies(gen.ID), func(s string) bool { return strings.HasSuffix(s, ":after the new key") }) {
+		t.Errorf("the device with the new key: %v", kat2.bodies(gen.ID))
+	}
 }

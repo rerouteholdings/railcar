@@ -79,7 +79,34 @@ func (e *Engine) rejoin(ctx context.Context) error {
 	if err := e.save(); err != nil {
 		return err
 	}
-	return e.topUp(ctx)
+	if err := e.topUp(ctx); err != nil {
+		return err
+	}
+	e.relinkCommunities(ctx)
+	return nil
+}
+
+// relinkCommunities has a device that came back as a new device wait to be
+// added to its communities again, as a newly linked device does (§7.2
+// step 5): it signs in to each community server with the new key, and
+// leaves key packages there. The caller holds e.mu.
+func (e *Engine) relinkCommunities(ctx context.Context) {
+	for _, cm := range e.st.Communities {
+		if cm.Left || cm.Asking || cm.MovingTo != "" {
+			continue
+		}
+		cm.Groups, cm.Linking, cm.Cursor = map[string]*CGroup{}, true, ""
+		conn := e.c.Community(cm.Server)
+		if err := conn.SignIn(ctx); err != nil {
+			e.log.Info("chat: signing in to a community server with the new key", "err", err)
+			continue
+		}
+		if err := e.topUpCommunity(ctx, cm); err != nil {
+			e.log.Info("chat: community key packages for the new key", "err", err)
+		}
+		e.refreshChannels(cm)
+	}
+	e.save()
 }
 
 // rejoinedChat carries a chat's place in the list over to the record its
