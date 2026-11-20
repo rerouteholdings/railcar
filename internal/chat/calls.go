@@ -141,6 +141,30 @@ type CallOptions struct {
 	Audio func() (AudioIO, error)
 	// Loopback adds loopback ICE candidates, for tests on one machine.
 	Loopback bool
+	// ProxyCalls allows calls and voice channels while connections go
+	// through a proxy. They're UDP, which the proxy doesn't carry, so they
+	// then go only through the homeserver's relay, which sees this
+	// device's real address.
+	ProxyCalls bool
+}
+
+// ErrCallsOff is the answer to starting, answering, or joining a call or
+// voice channel while a proxy is set and calls aren't allowed with it.
+var ErrCallsOff = errors.New("chat: calls and voice channels are off while Railcar uses a proxy, since they're UDP, which the proxy doesn't carry. Start Railcar with --proxy-calls to make them through your homeserver's relay, which then sees your real address")
+
+// callsOff reports whether calls are off because of a proxy.
+func (e *Engine) callsOff() bool { return e.c.Proxied() && !e.calls.opts.ProxyCalls }
+
+// CallsOff reports whether calls and voice channels are off because
+// connections go through a proxy.
+func (e *Engine) CallsOff() bool { return e.callsOff() }
+
+// mediaOptions are the WebRTC options for a call or voice channel. Through
+// a proxy, media goes only through the homeserver's relay, with no host or
+// server-reflexive candidates, so nothing outside the relay learns the
+// device's address.
+func (e *Engine) mediaOptions(o CallOptions, relayOnly bool) rtc.Options {
+	return rtc.Options{Loopback: o.Loopback && !e.c.Proxied(), RelayOnly: relayOnly || e.c.Proxied()}
 }
 
 // openAudio opens the microphone and speakers the user chose, or the
@@ -417,6 +441,9 @@ func (cs *calls) sendTo(c *call, d *callDev, op, data string) {
 func (e *Engine) StartCall(ctx context.Context, chat string) error {
 	cs := e.calls
 	return cs.doWait(func() error {
+		if e.callsOff() {
+			return ErrCallsOff
+		}
 		if cs.active != nil && cs.active.phase != CallEnded {
 			return errors.New("chat: you're in a call already")
 		}
@@ -461,7 +488,7 @@ func (e *Engine) StartCall(ctx context.Context, chat string) error {
 // SFrame keys. The caller makes it active.
 func (cs *calls) newCall(chat string, id []byte, group bool) (*call, error) {
 	e := cs.e
-	o := rtc.Options{Loopback: cs.opts.Loopback, RelayOnly: !e.DirectCalls()}
+	o := e.mediaOptions(cs.opts, !e.DirectCalls())
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	relay, err := e.c.Turn(ctx)
 	cancel()
@@ -514,6 +541,9 @@ func (cs *calls) setActive(c *call) {
 func (e *Engine) AnswerCall(ctx context.Context, chat string) error {
 	cs := e.calls
 	return cs.doWait(func() error {
+		if e.callsOff() {
+			return ErrCallsOff
+		}
 		var ring *CallRing
 		cs.mu.Lock()
 		for _, r := range cs.rings {
@@ -974,6 +1004,14 @@ func (cs *calls) handle(chat string, group bool, from string, dev []byte, ts tim
 		k.from = from
 		if mine {
 			return // another device of this identity is calling
+		}
+		if e.callsOff() {
+			// Calls are off with this proxy: a missed call, not a ring.
+			if !cs.missed[idStr] {
+				cs.missed[idStr] = true
+				cs.systemLine(chat, "Missed call from "+cs.who(from)+", since calls are off while Railcar uses a proxy")
+			}
+			return
 		}
 		if time.Since(ts) > ringFor || cs.missed[idStr] {
 			if !cs.missed[idStr] {

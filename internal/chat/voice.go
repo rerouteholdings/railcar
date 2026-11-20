@@ -236,6 +236,9 @@ func (v *voice) disconnected(server string) {
 func (e *Engine) JoinVoice(ctx context.Context, chat string) error {
 	v := e.voice
 	return v.doWait(func() error {
+		if e.callsOff() {
+			return ErrCallsOff
+		}
 		if c := v.cur; c != nil && c.ended == "" {
 			if c.chat == chat {
 				return errors.New("chat: you're in this voice channel already")
@@ -287,14 +290,19 @@ func (v *voice) join(chat string) error {
 	// community server, which sees this device's address on its stream
 	// anyway (§15.2, "Relays"). The homeserver's relay is used when it has
 	// one, and the device connects directly when it doesn't.
-	c.opts = rtc.Options{Loopback: v.opts.Loopback}
+	// Through a proxy, though, nothing goes direct: the relay is required
+	// (§15.2).
+	c.opts = e.mediaOptions(v.opts, false)
 	tctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	relay, terr := e.c.Turn(tctx)
 	cancel()
 	c.relay.set(relay)
-	if terr == nil {
+	switch {
+	case terr == nil:
 		c.opts.ICEServers = iceServers(relay)
-	} else {
+	case c.opts.RelayOnly:
+		return fmt.Errorf("chat: Railcar uses a proxy, so a voice channel goes only through your homeserver's relay, and it has none for you: %w", terr)
+	default:
 		e.log.Debug("chat: no call relay for the voice channel, so connecting directly", "err", terr)
 	}
 	api, err := rtc.NewAPI(c.opts)

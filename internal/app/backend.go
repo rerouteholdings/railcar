@@ -31,6 +31,9 @@ type Options struct {
 	Client client.Options
 	// Logger receives debug lines. Nil means none.
 	Logger *slog.Logger
+	// ProxyCalls allows calls and voice channels while Client.Proxy is
+	// set, through the homeserver's relay only.
+	ProxyCalls bool
 }
 
 // Backend is the real ui.Backend.
@@ -110,7 +113,7 @@ func (b *Backend) Open(ctx context.Context) (ui.Identity, error) {
 
 // start runs the chat layer for a client and returns the identity.
 func (b *Backend) start(c *client.Client) (ui.Identity, error) {
-	eng, err := chat.New(c, chat.Options{Logger: b.opts.Logger})
+	eng, err := chat.New(c, chat.Options{Logger: b.opts.Logger, Calls: chat.CallOptions{ProxyCalls: b.opts.ProxyCalls}})
 	if err != nil {
 		return ui.Identity{}, err
 	}

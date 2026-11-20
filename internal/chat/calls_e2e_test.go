@@ -14,6 +14,8 @@ import (
 	"time"
 
 	"github.com/rerouteholdings/railcar/internal/media/audio"
+	"github.com/rerouteholdings/railcar/internal/proxy"
+	"github.com/rerouteholdings/railcar/internal/proxy/proxytest"
 	"github.com/rerouteholdings/railcar/internal/testnet"
 	"github.com/rerouteholdings/railcar/internal/tieroute/client"
 )
@@ -398,7 +400,8 @@ func TestE2EInteropCalls(t *testing.T) {
 // so media goes only through each homeserver's TURN relay (§15.1,
 // §15.2): Railcar to Railcar across two servers, with new relay
 // credentials partway through, then Railcar to Reroute, then a voice
-// channel. It needs coturn.
+// channel, and last a call from an identity behind a proxy, with calls
+// allowed. It needs coturn.
 func TestE2ECallsRelayOnly(t *testing.T) {
 	bin := testnet.Rerouted(t)
 	o, relays := testnet.StartRelayed(t, bin, map[string]string{"c.test": "a.test"}, "a.test", "b.test")
@@ -518,4 +521,37 @@ func TestE2ECallsRelayOnly(t *testing.T) {
 	time.Sleep(2 * time.Second)
 	hears(t, "kat", kat.tone.record(2*time.Second), []float64{660}, 440)
 	hears(t, "ravi", ravi.tone.record(2*time.Second), []float64{440}, 660)
+	// Through a proxy, with calls allowed: only the relay, and a call
+	// still connects and carries audio (§15.2).
+	if err := ravi.e.LeaveVoice(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if err := kat.e.LeaveVoice(ctx); err != nil {
+		t.Fatal(err)
+	}
+	socks := proxytest.SOCKS5(t, "", "", nil)
+	px, _ := proxy.Parse(socks.URL)
+	maxTone := &toneAudio{hz: 1320}
+	max := &caller{newRailcarVia(t, o, "a.test", "max", px, Options{Calls: CallOptions{Audio: maxTone.open, Loopback: true, ProxyCalls: true}}), maxTone}
+	mctx, mcancel := context.WithCancel(ctx)
+	mdone := make(chan error, 1)
+	go func() { mdone <- max.e.Run(mctx) }()
+	t.Cleanup(func() { mcancel(); <-mdone })
+	waitEvent(t, max.e, "the stream", func(ev Event) bool { return ev.Kind == EventStream && ev.Stream == client.EventConnected })
+	mchat := callFriends(t, ctx, max, ravi)
+	waitFor(t, "the call to clear", func() bool { return phase(ravi.e) == "" })
+	if err := max.e.StartCall(ctx, mchat); err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, "Ravi's ring from Max", func() bool { return phase(ravi.e) == CallRinging })
+	if err := ravi.e.AnswerCall(ctx, mchat); err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, "the proxied call to connect", func() bool { return phase(max.e) == CallActive && phase(ravi.e) == CallActive })
+	if c, _ := max.e.Call(); !c.Relay {
+		t.Error("the proxied call isn't relay-only")
+	}
+	time.Sleep(time.Second)
+	hears(t, "ravi", ravi.tone.record(2*time.Second), []float64{1320}, 660)
+	max.e.HangUp(ctx)
 }
