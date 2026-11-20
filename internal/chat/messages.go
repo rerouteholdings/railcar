@@ -46,6 +46,13 @@ func (e *Engine) processApp(ctx context.Context, ch *Chat, b buffered) error {
 	// The checks on every message (§12): the signature, the message key
 	// against the sender's msg-key and chain, and the identity and group.
 	id, _, err := e.checkLeaf(&leaf.LeafInfo, e.chainGetter(ctx, false), leafCurrent)
+	var r retryable
+	if err != nil && !errors.As(err, &r) {
+		// This device's copy of the chain may be older than the leaf, as
+		// for a member who isn't a contact and has a new device: fetch it
+		// fresh once (§11.9).
+		id, _, err = e.checkLeaf(&leaf.LeafInfo, e.chainGetter(ctx, true), leafCurrent)
+	}
 	if err != nil {
 		return err
 	}
