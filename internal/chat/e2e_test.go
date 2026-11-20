@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -47,7 +48,7 @@ func (r *rerouteCLI) run(args ...string) string {
 	r.t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, r.bin, append([]string{"--profile", r.profile}, args...)...)
+	cmd := exec.CommandContext(ctx, r.bin, append([]string{"--profile", r.profile}, positional(args)...)...)
 	cmd.Env = append(os.Environ(), r.env...)
 	out, err := cmd.CombinedOutput()
 	r.t.Logf("$ reroute-cli %s\n%s", strings.Join(args, " "), out)
@@ -55,6 +56,26 @@ func (r *rerouteCLI) run(args ...string) string {
 		r.t.Fatalf("reroute-cli %s: %v", args[0], err)
 	}
 	return string(out)
+}
+
+// positional puts "--" before the first argument that is a random identifier starting with
+// "-", such as a base64url message or request ID. Without it, reroute-cli's argument parser
+// reads the ID as an option, so a test that passes one failed about 1 run in 32. Every caller
+// passes such IDs last, after any options.
+func positional(args []string) []string {
+	for i, a := range args {
+		if i > 0 && looksLikeID(a) {
+			out := append(append([]string{}, args[:i]...), "--")
+			return append(out, args[i:]...)
+		}
+	}
+	return args
+}
+
+// looksLikeID reports whether a starts with "-" but isn't an option: options are lowercase
+// words, while base64url IDs are long and mix cases, digits, and underscores.
+func looksLikeID(a string) bool {
+	return strings.HasPrefix(a, "-") && len(a) >= 16 && strings.ContainsAny(a, "0123456789_ABCDEFGHIJKLMNOPQRSTUVWXYZ")
 }
 
 func lastLine(s string) string {
@@ -599,4 +620,16 @@ func TestE2ERailcarMutual(t *testing.T) {
 	settle()
 	ravi.sync()
 	ravi.find(r.ID, "one chat")
+}
+
+func TestPositional(t *testing.T) {
+	got := positional([]string{"group-approve", "Late line", "-IE_qRszOq7SpyCm-RdWYQ"})
+	want := []string{"group-approve", "Late line", "--", "-IE_qRszOq7SpyCm-RdWYQ"}
+	if !slices.Equal(got, want) {
+		t.Fatalf("positional = %q, want %q", got, want)
+	}
+	plain := []string{"v2", "register", "lee", "--server", "http://127.0.0.1:1", "--invite", "railcar-e2e-signup"}
+	if got := positional(plain); !slices.Equal(got, plain) {
+		t.Fatalf("options changed: %q", got)
+	}
 }
