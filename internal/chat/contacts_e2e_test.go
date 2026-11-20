@@ -209,14 +209,20 @@ func TestE2EInteropContacts(t *testing.T) {
 	lch := kat.chatWith("lee.b.test")
 	mch := kat.chatWith("max.b.test")
 
-	// Railcar removes Lee: Reroute gets the leave, and Kat's messages stop.
+	// Railcar removes Lee: Reroute gets the leave and ends the chat, and
+	// refuses to send there (§9.6). Nothing it sends arrives either way.
 	if err := kat.e.RemoveContact(ctx, kat.contactID("lee.b.test")); err != nil {
 		t.Fatal(err)
 	}
 	settle()
-	out := lee.run("sync")
-	t.Logf("Reroute after Railcar removed it: %s", out)
-	lee.run("send", "kat.a.test", "after you removed me")
+	if out := lee.run("sync"); !strings.Contains(out, "left this chat") {
+		t.Errorf("Reroute didn't end the chat when Railcar left it: %s", out)
+	}
+	if out, err := lee.tryOut("send", "kat.a.test", "after you removed me"); err == nil {
+		t.Errorf("Reroute sent in a chat that ended: %s", out)
+	} else if !strings.Contains(out, "ended") {
+		t.Errorf("Reroute refused for another reason: %s", out)
+	}
 	settle()
 	kat.sync()
 	if kat.has(lch.ID, "after you removed me") {

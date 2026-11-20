@@ -175,9 +175,15 @@ func TestE2EInteropMoveCommunity(t *testing.T) {
 // try runs reroute-cli like run, and returns its error instead of failing
 // the test, for a command that may not work yet.
 func (r *rerouteCLI) try(args ...string) error {
+	_, err := r.tryOut(args...)
+	return err
+}
+
+// tryOut is try, with the command's output.
+func (r *rerouteCLI) tryOut(args ...string) (string, error) {
 	cmd := exec.Command(r.bin, append([]string{"--profile", r.profile}, positional(args)...)...)
 	cmd.Env = append(os.Environ(), r.env...)
 	out, err := cmd.CombinedOutput()
 	r.t.Logf("$ reroute-cli %s\n%s", strings.Join(args, " "), out)
-	return err
+	return string(out), err
 }
