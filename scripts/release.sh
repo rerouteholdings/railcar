@@ -11,15 +11,16 @@
 #   scripts/release.sh VERSION       such as 0.1.0 or 0.1.0-rc.1
 #
 # Railcar links tieroute-mls (Rust) and libopus (C) with cgo, so each system is built
-# natively, not cross-compiled from Go alone:
+# with its own C and Rust toolchains, not cross-compiled from Go alone:
 #
 # - macOS, on a Mac: arm64 and amd64, with the x86_64-apple-darwin Rust target for amd64
 #   (rustup target add x86_64-apple-darwin).
 # - Linux, in Docker, through the context in DOCKER_CONTEXT (default colima-reroute-build,
-#   started with: colima start --profile reroute-build --arch aarch64 --vm-type vz
-#   --vz-rosetta). Each architecture builds in a GO_IMAGE container (default
-#   golang:1.27-bookworm) for its platform, which installs Rust with rustup. Without
-#   Docker, the Linux tarballs and packages are left out, with a note.
+#   started with: colima start --profile reroute-build --arch aarch64 --vm-type vz).
+#   Both architectures build in GO_IMAGE containers (default golang:1.27-bookworm) of
+#   the Docker machine's own architecture, which install Rust with rustup; the other
+#   architecture is cross-compiled with Debian's cross toolchain. Without Docker, the
+#   Linux tarballs and packages are left out, with a note.
 #
 # It builds the committed tree (HEAD, or REF), not uncommitted changes, and signs nothing.
 # Set ONLY to a space-separated list, such as "darwin-arm64 linux-amd64", to build some.
@@ -81,21 +82,45 @@ build_darwin() { # arch
 }
 
 build_linux() { # arch
-  local arch=$1 src
+  local arch=$1 src host
   src=$(source_for "linux-$arch")
-  echo "==> linux-$arch, in $GO_IMAGE on $DOCKER_CONTEXT"
-  docker --context "$DOCKER_CONTEXT" run --rm --platform "linux/$arch" \
-    -v "$src:/src" -v "$STAGE:/out" -w /src -e GO_LDFLAGS="$LDFLAGS" -e ARCH="$arch" "$GO_IMAGE" bash -ec '
-      apt-get update -qq && apt-get install -y -qq curl build-essential >/dev/null
-      # rustup-init for this architecture, rather than sh.rustup.rs, whose
+  # Every Linux build runs in a container of the Docker machine's own
+  # architecture. The other architecture is cross-compiled with Debian's
+  # cross toolchain, since gcc under emulation is slow and can crash.
+  case $(docker --context "$DOCKER_CONTEXT" info --format '{{.Architecture}}') in
+    x86_64 | amd64) host=amd64 ;;
+    aarch64 | arm64) host=arm64 ;;
+    *) echo "the Docker machine's architecture isn't amd64 or arm64" >&2; exit 1 ;;
+  esac
+  echo "==> linux-$arch, in $GO_IMAGE ($host) on $DOCKER_CONTEXT"
+  docker --context "$DOCKER_CONTEXT" run --rm --platform "linux/$host" \
+    -v "$src:/src" -v "$STAGE:/out" -w /src -e GO_LDFLAGS="$LDFLAGS" -e ARCH="$arch" -e HOST="$host" "$GO_IMAGE" bash -ec '
+      triple() { case $1 in amd64) echo x86_64-linux-gnu ;; arm64) echo aarch64-linux-gnu ;; esac; }
+      rtarget() { case $1 in amd64) echo x86_64-unknown-linux-gnu ;; arm64) echo aarch64-unknown-linux-gnu ;; esac; }
+      pkgs="curl build-essential"
+      if [ "$ARCH" != "$HOST" ]; then
+        cc=$(triple "$ARCH")-gcc
+        pkgs="$pkgs gcc-${cc%-gcc} libc6-dev-$ARCH-cross"
+        pkgs=${pkgs//_/-}
+      fi
+      apt-get update -qq && apt-get install -y -qq $pkgs >/dev/null
+      # rustup-init for this machine, rather than sh.rustup.rs, whose
       # architecture check fails under emulation.
-      case $ARCH in amd64) rt=x86_64-unknown-linux-gnu ;; arm64) rt=aarch64-unknown-linux-gnu ;; esac
-      curl -sSf -o /tmp/rustup-init "https://static.rust-lang.org/rustup/dist/$rt/rustup-init"
+      curl -sSf -o /tmp/rustup-init "https://static.rust-lang.org/rustup/dist/$(rtarget "$HOST")/rustup-init"
       chmod +x /tmp/rustup-init && /tmp/rustup-init -y -q --profile minimal >/dev/null
       . "$HOME/.cargo/env"
-      (cd mls && cargo build --release --locked --quiet)
-      scripts/build-opus.sh >/dev/null 2>/tmp/opus.log || { cat /tmp/opus.log >&2; exit 1; }
-      CGO_ENABLED=1 go build -buildvcs=false -trimpath -ldflags "$GO_LDFLAGS" -o /out/railcar-linux-$ARCH ./cmd/railcar'
+      rt=$(rtarget "$ARCH")
+      if [ "$ARCH" = "$HOST" ]; then
+        (cd mls && cargo build --release --locked --quiet)
+        scripts/build-opus.sh >/dev/null 2>/tmp/opus.log || { cat /tmp/opus.log >&2; exit 1; }
+        CGO_ENABLED=1 go build -buildvcs=false -trimpath -ldflags "$GO_LDFLAGS" -o /out/railcar-linux-$ARCH ./cmd/railcar
+      else
+        rustup target add "$rt" >/dev/null 2>&1
+        (cd mls && cargo build --release --locked --quiet --target "$rt")
+        mkdir -p mls/target/release && cp "mls/target/$rt/release/libtieroute_mls.a" mls/target/release/
+        CC=$cc OPUS_HOST=$(triple "$ARCH") scripts/build-opus.sh >/dev/null 2>/tmp/opus.log || { cat /tmp/opus.log >&2; exit 1; }
+        CGO_ENABLED=1 GOARCH=$ARCH CC=$cc go build -buildvcs=false -trimpath -ldflags "$GO_LDFLAGS" -o /out/railcar-linux-$ARCH ./cmd/railcar
+      fi'
 }
 
 docker_ok() { command -v docker >/dev/null && docker --context "$DOCKER_CONTEXT" info >/dev/null 2>&1; }
