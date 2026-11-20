@@ -49,7 +49,8 @@ Options:
 Railcar is in early development: it has direct chats, group chats, and
 communities, files, presence, read receipts, backups, moves to another
 homeserver, calls, and voice channels, and signs in with another device.
-Calls use the default microphone and speakers: type :call in a chat.
+Type :call in a chat to call; Ctrl+Y answers, Ctrl+R mutes, and Ctrl+X
+hangs up. :audio-devices chooses the microphone and speakers.
 `
 
 // devServers collects --dev-server flags.
