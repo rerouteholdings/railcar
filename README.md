@@ -44,6 +44,7 @@ Railcar is in early development. It has direct chats, group chats, and communiti
    - Linux builds in Docker, checked in a container of each architecture.
    - For calls: new relay credentials before the old ones expire (§15.1), a choice of microphone and speakers, and keys to answer, hang up, and mute.
    - Removing and blocking contacts, and unblocking them (§9.6).
+   - Coming back as a new device after missing too much (§11.9), re-creating a stuck direct chat, and offering to re-create a chat that's stuck (§11.11).
 
 ## Build
 
