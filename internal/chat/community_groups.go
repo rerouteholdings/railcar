@@ -640,6 +640,13 @@ func (e *Engine) communityWelcome(ctx context.Context, cm *Community, d *client.
 	// Which group: the members group, or the one carrying a see list.
 	var see []uint64
 	if d.Group != cm.MembersGroup {
+		// The Welcome can come before the entries that let this identity
+		// see the group's channels: bring the chain up to date first.
+		if _, err := e.syncCommunityChain(ctx, cm, nil); err != nil {
+			mg.Delete()
+			e.dev.Revert()
+			return retryable{err}
+		}
 		c, err := e.communityChain(cm)
 		if err != nil {
 			return refuse(err)
