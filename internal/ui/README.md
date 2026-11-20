@@ -27,6 +27,7 @@ go run ./cmd/railcar --demo
    Under 80 columns, the main view shows one pane at a time: the chat list, the open chat, or its details.
 3. Overlays. Press ? for every key, and Ctrl+P or : for the command palette. The palette finds commands and chats as you type, and runs commands by name, such as `:quit` and `:sign-out`. Signing out asks first.
    - Ctrl+N, or `:add`, opens **Add a contact**, which takes someone's code: `@handle::code`, or its link (§9.4). `:add @ravi.example.com::Kx82mPq1Za` fills it in.
+   - `:remove-contact` and `:block` remove or block someone, after asking: the person in the open direct chat or contact request, or `@handle` (§9.6). The direct chat ends, with its messages kept. A blocked person isn't told, and their requests are dropped. `:unblock @handle` unblocks someone, and `:blocked` lists who's blocked.
    - `:invite` makes an invite code, shows it, and copies it to the clipboard where the terminal allows that (§9.1).
    - `:add-device` opens **Add a device**, which takes a new device's link code and a name for it. It then shows the warning §7.2 requires and the confirmation code to type on the new device, and waits for it. `:add-device link-…` fills in the code.
    - `:approval-code` opens **Show an approval code**: the warning first, then the code as a QR code and as text, for 10 minutes and one device (§7.2.1).

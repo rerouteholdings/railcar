@@ -43,6 +43,7 @@ Railcar is in early development. It has direct chats, group chats, and communiti
 6. Finishing. In progress:
    - Linux builds in Docker, checked in a container of each architecture.
    - For calls: new relay credentials before the old ones expire (§15.1), a choice of microphone and speakers, and keys to answer, hang up, and mute.
+   - Removing and blocking contacts, and unblocking them (§9.6).
 
 ## Build
 
@@ -62,7 +63,7 @@ To build a release for macOS and Linux, run `scripts/release.sh 0.1.0`. Its firs
 ./railcar
 ```
 
-The first time, Railcar asks for a homeserver, a handle, and the homeserver's registration code, and shows your 12 recovery words. Or choose **Sign in with another device** to use an identity you already have in Reroute or another copy of Railcar. Then press Ctrl+N to add a contact with their code, or type `:invite` to make a code to give someone. Type `:new-group` to start a group chat with some of your contacts, `:join` with a code to join a community, and `:create-community` to create one on a community server. Type `:add-device` to add a new device, and `:devices` to see yours. `:backup-on` turns on the encrypted message backup, and `:move` moves you to another homeserver. In a chat, `:call` calls the people in it, and in a voice channel, `:join-voice` joins it. Ctrl+Y answers a call, Ctrl+R mutes or unmutes, and Ctrl+X hangs up, in either. `:audio-devices` chooses the microphone and speakers. `./railcar --help` lists the options, such as `--profile` to keep more than one identity.
+The first time, Railcar asks for a homeserver, a handle, and the homeserver's registration code, and shows your 12 recovery words. Or choose **Sign in with another device** to use an identity you already have in Reroute or another copy of Railcar. Then press Ctrl+N to add a contact with their code, or type `:invite` to make a code to give someone. `:remove-contact` and `:block` remove or block the person in the open direct chat. Type `:new-group` to start a group chat with some of your contacts, `:join` with a code to join a community, and `:create-community` to create one on a community server. Type `:add-device` to add a new device, and `:devices` to see yours. `:backup-on` turns on the encrypted message backup, and `:move` moves you to another homeserver. In a chat, `:call` calls the people in it, and in a voice channel, `:join-voice` joins it. Ctrl+Y answers a call, Ctrl+R mutes or unmutes, and Ctrl+X hangs up, in either. `:audio-devices` chooses the microphone and speakers. `./railcar --help` lists the options, such as `--profile` to keep more than one identity.
 
 Railcar keeps each profile's key in the system keychain. Without one, it stops, unless you run it with `--key-file`, which keeps the key in a file next to the data instead.
 

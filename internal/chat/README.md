@@ -7,6 +7,7 @@ The package sits between `internal/tieroute/client`, which talks to the homeserv
 ## What it does
 
 - Contacts (§9): invite codes, contact requests in and out, accepting, declining, and requests in both directions, where the identity whose identifier sorts first creates the direct chat.
+- Removing and blocking (§9.6). `RemoveContact` calls `contacts/remove`, then leaves the direct chat as §11.7 says: a Remove proposal for each of the identity's leaves, sent to both identities, and the chat ends with the history kept. The other side's app ends the chat too, with "@kat left this chat". `Block` calls `contacts/block`, and sends the same proposals only to the identity's own devices, so the blocked person isn't told; the homeserver drops their requests and Welcomes from then on, and a request waiting from them is dropped. A device that sees its own identity leave a direct chat ends it, and takes the contact's state from `GET contacts`. `Unblock` calls `contacts/unblock`, and they're not a contact until one of them sends a request. Group chats shared with a blocked person go on as before.
 - Direct chats (§9.3, §11): the accepter creates a 1:1 MLS group with its homeserver as hub, adds every current device of both identities, registers the group with an epoch key, and sends the Add commit with its Welcome. The Add commit binds both identities' chains in `basis`, sets `heads`, and records when the contact joined in `since` (§7.1, §11.8). A commit's `to` lists the members before it, so an identity the commit adds gets only its Welcome (§10.2).
 - Joining from a Welcome: the Welcome has to come from a contact, and every leaf is checked on this device's own fresh chain copies (§7.1).
 - Commits from the other side, such as a bare Update after a new message key, or the Add of a newly linked device: each is checked against the hub's receipt (§11.6), judged, and applied, or refused.
@@ -139,7 +140,6 @@ for ev := range eng.Events() { ... }
 
 ## Not yet
 
-- Removing a contact, and blocking.
 - Offering re-creation on its own after 24 hours without the hub, or an hour of failed commits (§11.11): `:recreate` does it when the user asks.
 - Moving a community as its owner, and re-creating a community's groups (§16.5, §16.6). A restricted group whose hub the owner doesn't hand over stays on the old community server.
 - The fork rule for community chains: Railcar follows the community server's chain, and stops at an entry it refuses.
