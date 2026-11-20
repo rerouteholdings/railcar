@@ -20,7 +20,8 @@ go run ./cmd/railcar --demo
    - The open chat. Messages are grouped by day, and by sender within a day, with a time on each group. Replies show the message they answer, edited messages say so, deleted ones say **Message deleted**, and reactions show under the message with their counts. The line under the chat's title says who's typing. Lines Railcar shows on its own, such as "@kat has a new device", are centered, without a sender (§11.9). Below the messages is the composer.
    - An open contact request shows who it's from, with a to accept it and d to decline it.
    - The details pane, opened with Ctrl+O. In a direct chat, it shows the other person's public profile (§13): their initials in place of a picture, which terminals can't show well, their display name and handle, their presence and status message, their bio, and their links, each with its full domain first. Elsewhere it lists the chat's members, with their presence, and handles, a group chat's admins and topic and the add-requests waiting for an admin, and a channel's community and its members' roles.
-   - A voice channel shows who's in it, and says that Railcar can't join voice channels.
+   - A voice channel shows who's in it, and how to join it.
+   - While there's a call or a voice channel, the call bar sits above the status bar: who's calling or who's in it, how long it has lasted, whether you're muted or deafened, a level meter for your microphone, who's muted and who's speaking, and `direct` when the call may connect directly.
    - The status bar shows the identity's handle, its homeserver, its presence when it isn't **Online**, and the stream's state: **Connected**, **Connecting** or **Reconnecting** with a spinner, or **Offline**.
 
    Under 80 columns, the main view shows one pane at a time: the chat list, the open chat, or its details.
@@ -42,6 +43,8 @@ go run ./cmd/railcar --demo
    - `:backup-on` opens **Turn on the backup**, which takes a passphrase of six or more random words and shows it as dots (§7.5). `:backup-now` uploads what's new, `:backup` shows the state, `:backup-off` turns it off, and `:restore-backup` restores it, asking for the passphrase when this device needs it.
    - A message that mentions you, or an `@everyone` that counts, says **Mentions you**, rings the terminal bell, and shows a desktop notification: OSC 9 in iTerm2, WezTerm, ghostty, kitty, and Windows Terminal, OSC 777 in foot, urxvt, and VTE-based terminals, and otherwise `notify-send` on Linux or `osascript` on macOS when they're there. It names who and where, never the text. `:notifications` turns them off or on for this run. Typing `@` and a handle in a message mentions that person.
    - `:report spam` reports the latest message from someone else, with the reason (§17.2). Railcar first shows the message, the reason, and who can read the report: the homeserver's admins, or for a channel the community's moderators and the community server. Enter sends it, and f also sends it to the sender's homeserver.
+   - Calls (§15.2): `:call` calls the open direct chat or group chat. A ring rings the terminal bell and shows a desktop notification, as mentions do; `:answer` answers, and `:decline-call` declines. In a call, `:mute`, `:unmute`, `:deafen`, `:undeafen`, and `:hangup`. `:answer` during a call ends it and answers the one waiting. `:direct-calls on` lets calls and voice channels connect directly, which shows your IP address; they're relayed otherwise.
+   - Voice channels (§16.4): `:join-voice` in a voice channel joins it, and `:leave-voice` leaves; `:mute` and `:deafen` work there too.
    - `:reply`, `:edit`, `:delete`, and `:react` act on the latest message: someone else's for replying and reacting, the identity's own for editing and deleting. `:react 🎉` picks the emoji; it's 👍 otherwise, and reacting again with the same emoji takes it back.
 
 The mouse works too: click a chat to open it, click a pane to move to it, and scroll the messages or the chat list.
@@ -91,7 +94,7 @@ The interface reaches the protocol only through `Backend`, in `backend.go`. It c
 | `CancelApproval` | Stops adding a device, and forgets its code |
 | `Devices`, `RemoveDevice` | List the identity's devices, and remove one (§7.6) |
 | `Connect` | Starts the live stream, which reconnects on its own |
-| `Events` | A channel of `StreamChanged`, `ChatChanged`, `ChatRemoved`, `MessageAdded`, `MessageChanged`, `Typing`, `IdentityChanged`, and `SignedOut` events. A change of someone's presence or profile comes as a `ChatChanged` for each chat they're in |
+| `Events` | A channel of `StreamChanged`, `ChatChanged`, `ChatRemoved`, `MessageAdded`, `MessageChanged`, `Typing`, `IdentityChanged`, `CallChanged`, and `SignedOut` events. A change of someone's presence or profile comes as a `ChatChanged` for each chat they're in |
 | `Chats` | Every direct chat and group chat, and every contact request, as a `ContactRequest` or `SentRequest` |
 | `Messages` | Up to a limit of a chat's messages, oldest first, before a given message or the latest |
 | `Send` | Queues a message and returns it as sending; a `MessageChanged` event follows when it's sent or fails |
@@ -103,13 +106,13 @@ The interface reaches the protocol only through `Backend`, in `backend.go`. It c
 | `AcceptRequest`, `DeclineRequest` | Answer a contact request; accepting starts the direct chat |
 | `Contacts` | Lists the contacts, for choosing who goes in a group chat |
 | `CreateGroup` | Creates a group chat with some contacts, by handle |
-| `Act` | Runs an `Action`, such as `add-member`, `join-community`, `kick`, or `read-receipts`, and returns a line to show |
+| `Act` | Runs an `Action`, such as `add-member`, `join-community`, `kick`, `read-receipts`, `call`, or `join-voice`, and returns a line to show |
 | `SignOut` | Removes the identity from this device |
 | `Close` | Stops the stream and closes `Events` |
 
 Typing indicators follow §13.3: the composer sends one at most once a second while you type, and a stop after 7 seconds without a keystroke or when you send. Someone else's disappears after 10 seconds without news.
 
-`DemoBackend`, in `demo.go`, `demo_contacts.go`, and `demo_groups.go`, implements it with made-up chats and a community, Night shift, with two text channels and a voice channel. A contact added in the demo accepts a few seconds later. `railcar --demo` runs it live, with a short wait to connect, a dropped connection every few minutes, and replies in direct chats. The tests run it with a fixed clock and no waits.
+`DemoBackend`, in `demo.go`, `demo_contacts.go`, `demo_groups.go`, and `demo_calls.go`, implements it with made-up chats and a community, Night shift, with two text channels and a voice channel. A contact added in the demo accepts a few seconds later, and Ravi calls a few seconds after it connects, to show the call bar; calls in the demo go nowhere. `railcar --demo` runs it live, with a short wait to connect, a dropped connection every few minutes, and replies in direct chats. The tests run it with a fixed clock and no waits.
 
 ## Tests
 

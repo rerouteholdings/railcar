@@ -30,6 +30,7 @@ The package sits between `internal/tieroute/client`, which talks to the homeserv
 - Files (§14): `SendFile` encrypts a file with its own key, uploads it to the homeserver, and sends a `file` message; received `file` messages and `text` with `files` keep their media-refs as attachments. `SaveFile` downloads one through the homeserver, checks its hash, decrypts it, and saves it under its name without directories, never over an existing file. An image's size in pixels is read from its bytes, when this device has them. `410 expired` and `410 removed` are kept on the attachment, and `413 over-quota` is "storage full".
 - Presence and profiles (§13): presence frames from the stream, kept in memory; each contact's profile fetched when a frame's `pv` is newer than the one stored, and the profiles of chat members and people asking to be contacts fetched once per connect when this device has none. Setting the identity's own presence, status message, and profile, which `EditProfile` changes field by field. The presence the user chose is sent again on every connect, and `AutoAway` moves `available` and `online` to `away` while the user is idle, and back (§13.2).
 - Communities (§16): see below.
+- Calls (§15.2): see below.
 
 ## Checks it makes
 
@@ -72,7 +73,7 @@ What it does:
 - Read positions: sent when a channel is read, and taken from the community server every 30 seconds when they're ahead (§16.4).
 - Following a community that moves (§16.6): a `set-home` in the chain, or `409 wrong-home` from the old community server, starts it. Railcar keeps reading the old server until the members group's hub is the new one, then signs in there, registers the members group first and then its other groups, leaves key packages, moves the channels' chats and history to the new server's name, and streams from there.
 - Moderation: timeouts, kicks, and bans, with Removes of the member's leaves in every group this device is in. After a kick or ban, an admin's Railcar rotates the community metadata key: one entry re-seals every role's name and color, and every name and topic of the channels everyone sees, under a new key, which then goes to the members group (§16.2.4). A moderator without `administrate` leaves that to an admin. Either way, the moderator's Railcar gives every text channel that keeps history a new history key, and each restricted group it's in a new metadata key, and sends each group its keys (§16.5).
-- Voice channels are listed with who's in them, from `voice-state`. Railcar can't join them.
+- Voice channels: listed with who's in them, from `voice-state`, and joined through the community server's selective forwarding unit (SFU). See "Calls and voice channels" below.
 
 | What | Checks | Section |
 |---|---|---|
@@ -86,6 +87,30 @@ What it does:
 | History lines | §16.5's line checks, then each message's signature, `msg-key`, and certifying device | §16.5, §7.3 |
 
 A refused commit stops the community: Railcar sends nothing to it again.
+
+## Calls and voice channels
+
+Calls are in `calls.go`, voice channels in `voice.go`, and the media they share in `internal/media`: `audio` (the microphone and speakers through miniaudio, and test tones), `opus` (libopus), and `rtc` (WebRTC with Pion, and SFrame on every frame). SFrame itself is `internal/tieroute/sframe`, checked against `spec/vectors/sframe.json`.
+
+Calls (§15.2):
+
+- Signaling is `call` content in the chat's group: `ring` as a stored delivery, everything else ephemeral. One goroutine handles each call's events in order, so the inbox never waits on WebRTC.
+- Every device of the callee rings. The first to `accept` gets the caller's offer; the others stop ringing when they see the accept, or `sdp` for another device of theirs, and show "Answered on another device". In a direct chat, a `decline` from any of them stops the call; in a group, it only means that person isn't joining.
+- Group calls are a full mesh of up to 10 people: every device in the call offers to each device whose `accept` arrives. Crossing offers keep the one from the device whose key is lower.
+- Two calls in one chat settle on the one whose ID is lower. A ring during a call is call waiting: shown, and nothing is sent.
+- Ringing lasts 60 seconds; then the caller sends `hangup`, and the callee's devices show a missed call. A ring older than that when it arrives is a missed call at once.
+- Offers have §15.3's three sections, and wait up to 5 seconds for this side's ICE candidates, so few `ice` messages follow.
+- SFrame keys: `base_key` is `MLS-Exporter("SFrame 1.0 Tieroute call", call ID, 16)` for the current epoch, and the KID is the leaf index and the epoch's low 4 bits. The sender switches at the next epoch; a receiver keeps the previous epoch's key for 10 seconds.
+- `state` carries mute and deafen, sent again whenever a device joins.
+- Relays (§15.1): calls use only relayed candidates, from `GET turn`, unless the user allows direct calls (`SetDirectCalls`, kept in the chat records). Without a relay, a relay-only call doesn't start, and says why.
+
+Voice channels (§16.4, community server API "Voice"):
+
+- The community stream carries `voice-join`, `voice-sdp`, `voice-ice`, and `voice-leave`. A visit has a random 32-bit ID and a random 32-byte base key; an `already-exists` error picks another ID.
+- After `voice-joined`, the device sends its `voice-key` in the group that carries the channel, then media with the KID visit ID and generation. Each later `voice-state` that lists a new visit makes it send the key again, ephemeral, and `voice-mute` after it while muted. The first `voice-state` after joining doesn't count.
+- Keys arrive for every voice channel this device can see, and are kept in memory; a key for a visit no `voice-state` lists yet is kept for a minute. A key or mute state from someone other than the visit's identity is dropped.
+- `voice-moved` joins the other channel with a new visit. A dropped stream ends the visit, and Railcar joins again when it reconnects.
+- Who's speaking comes from each sender's audio level.
 
 ## State
 
@@ -121,7 +146,9 @@ for ev := range eng.Events() { ... }
 - Moves signed with the recovery code, for an old home that's gone, and the recovery-signed entry that vouches for a move contacts' homeservers missed (§6.6).
 - Sending the moved chain inside group chats (§6.6, step 3): the spec doesn't say in what content. Members who aren't contacts learn of the move when they fetch the chain.
 - Rejoining after an inbox gap or an expired commit (§11.9), and re-creating a stuck direct chat (§11.11).
-- Calls, and voice channels (§15, §16.4): phase 5.
+- Casting media in a call or a voice channel (§15.3): Railcar receives casts, and never sends one.
+- Rekeying a visit to a voice channel with a new generation (§16.4): a visit keeps generation 0.
+- Fetching new relay credentials before `ttl` runs out during a long call (client API, "Call relays").
 - Checking a message against the sender's leaf in the epoch it was sent in, when the leaf changed since. Such a message is dropped for now.
 
 ## Tests
@@ -158,5 +185,13 @@ go test ./internal/chat -run E2E -v
 - `TestE2EInteropCommunityMove`: Reroute's owner moves a community to another community server, and Railcar follows it, with its history, and messages go both ways there.
 - `TestE2ERailcarCommunities`: between Railcar identities, with a member who can't make codes, a late joiner reading history and reporting a message, a moderator's delete, read positions, a timeout, a kick that rotates the metadata key, and mentions and an `@everyone`, and typing in a channel.
 - `TestE2ERailcarReceipts`: two Railcar identities on the live stream. Nothing asks until the sender turns asking on; the reader is asked once, sends nothing before agreeing, and nothing after declining; receipts mark only the messages that asked. Reroute shows a message that asks.
+
+- `TestE2ERailcarCalls`: two Railcar identities on two servers call each other, and each hears the other's tone, decrypted from SFrame; a mute shows and silences; a declined call and a missed call leave their lines; and a group call of three, a full mesh, goes on when the caller leaves.
+- `TestE2EInteropCalls`: Railcar calls Reroute, and Reroute calls Railcar; each hears the other, and each sees the other muted.
+- `TestE2ECallsRelayOnly`: with direct calls off, calls between Railcar identities and with Reroute, and a voice channel, go only through each homeserver's coturn relay. It needs coturn's `turnserver`, and skips without it.
+- `TestE2ERailcarVoice`: two Railcar identities meet in a voice channel through the SFU and hear each other, a mute shows, and a third joins late and gets both keys again.
+- `TestE2EInteropVoice`: Railcar and Reroute meet in a voice channel in a community Reroute created, and each hears the other; Reroute, deafened, is in it first, and Railcar joins late and gets its key.
+
+The call tests use tones for microphones, and measure what each side hears with the Goertzel algorithm.
 
 The community tests run rerouted with community server names, which `testnet.StartWith` sets up, and give reroute-cli their origins in `REROUTE_COMMUNITY_URLS`. Set `RAILCAR_E2E_LOGS` to see the servers' logs and Railcar's own.

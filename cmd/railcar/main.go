@@ -47,8 +47,9 @@ Options:
   -h, --help             Show this help.
 
 Railcar is in early development: it has direct chats, group chats, and
-communities, files, presence, read receipts, backups, and moves to another
-homeserver, and signs in with another device. Calls come next.
+communities, files, presence, read receipts, backups, moves to another
+homeserver, calls, and voice channels, and signs in with another device.
+Calls use the default microphone and speakers: type :call in a chat.
 `
 
 // devServers collects --dev-server flags.
