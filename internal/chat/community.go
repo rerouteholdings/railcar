@@ -333,6 +333,13 @@ func (e *Engine) channelMetaKeys(cm *Community, ch *community.Channel) [][]byte 
 		for _, k := range cm.ChannelKeys[ch.ID] {
 			out = append(out, k)
 		}
+		// Keys from community-keys are kept by the group that carries the
+		// channel (§16.2.4).
+		if g := e.groupFor(cm, ch); g != nil {
+			for _, k := range cm.ChannelKeys[groupKeyID(g.ID)] {
+				out = append(out, k)
+			}
+		}
 	}
 	for _, k := range cm.MetaKeys {
 		out = append(out, k)
