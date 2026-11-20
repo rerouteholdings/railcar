@@ -21,6 +21,7 @@ mls: $(MLS_LIB)
 
 $(MLS_LIB): mls/Cargo.toml mls/Cargo.lock $(wildcard mls/src/*.rs)
 	cd mls && $(CARGO) build --release --locked
+	scripts/strip-bitcode.sh $(MLS_LIB)
 
 opus: $(OPUS_LIB)
 

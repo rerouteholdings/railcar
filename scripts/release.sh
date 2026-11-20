@@ -112,12 +112,14 @@ build_linux() { # arch
       rt=$(rtarget "$ARCH")
       if [ "$ARCH" = "$HOST" ]; then
         (cd mls && cargo build --release --locked --quiet)
+        scripts/strip-bitcode.sh mls/target/release/libtieroute_mls.a
         scripts/build-opus.sh >/dev/null 2>/tmp/opus.log || { cat /tmp/opus.log >&2; exit 1; }
         CGO_ENABLED=1 go build -buildvcs=false -trimpath -ldflags "$GO_LDFLAGS" -o /out/railcar-linux-$ARCH ./cmd/railcar
       else
         rustup target add "$rt" >/dev/null 2>&1
         (cd mls && cargo build --release --locked --quiet --target "$rt")
         mkdir -p mls/target/release && cp "mls/target/$rt/release/libtieroute_mls.a" mls/target/release/
+        OBJCOPY=$(triple "$ARCH")-objcopy scripts/strip-bitcode.sh mls/target/release/libtieroute_mls.a
         CC=$cc OPUS_HOST=$(triple "$ARCH") scripts/build-opus.sh >/dev/null 2>/tmp/opus.log || { cat /tmp/opus.log >&2; exit 1; }
         CGO_ENABLED=1 GOARCH=$ARCH CC=$cc go build -buildvcs=false -trimpath -ldflags "$GO_LDFLAGS" -o /out/railcar-linux-$ARCH ./cmd/railcar
       fi'
