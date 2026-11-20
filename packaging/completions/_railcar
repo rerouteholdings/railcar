@@ -1,0 +1,10 @@
+#compdef railcar
+# zsh completion for railcar
+_arguments \
+  '--profile[keep the identity, keys, and messages in a directory]:directory:_directories' \
+  '--key-file[keep the profile key in a file when there is no keychain]' \
+  '--log[write debug lines to a file]:file:_files' \
+  '*--dev-server[reach a server at a URL, for local test networks]:NAME=URL:' \
+  '--demo[run with made-up chats and no network]' \
+  '--version[print the version]' \
+  '(-h --help)'{-h,--help}'[show the help]'

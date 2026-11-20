@@ -1,0 +1,69 @@
+.TH RAILCAR 1 "November 2026" "Railcar" "User Commands"
+.SH NAME
+railcar \- terminal client for the Tieroute chat protocol
+.SH SYNOPSIS
+.B railcar
+[\fB\-\-profile\fR \fIDIR\fR] [\fB\-\-key\-file\fR] [\fB\-\-log\fR \fIFILE\fR] [\fB\-\-dev\-server\fR \fINAME\fR=\fIURL\fR]...
+.br
+.B railcar \-\-demo
+.br
+.B railcar \-\-version
+.SH DESCRIPTION
+Railcar is a terminal client for Tieroute, a federated, end-to-end encrypted
+(E2EE) chat protocol, from Reroute Holdings LLC. It has direct chats, group
+chats, communities, files, profiles, presence, read receipts, backups, moves
+to another homeserver, reports, calls, and voice channels.
+.PP
+The first time it runs, Railcar asks for a homeserver, a handle, and the
+homeserver's registration code, or signs in with another device or the
+recovery code. Type \fB?\fR for every key, and \fB:\fR or Ctrl+P for the
+command palette.
+.SH OPTIONS
+.TP
+.BI \-\-profile " DIR"
+Keep the identity, keys, and messages in \fIDIR\fR. The default is
+\fI~/.config/railcar\fR on Linux, or the system's configuration folder.
+.TP
+.B \-\-key\-file
+When there's no system keychain, keep the profile's key in a file in the
+profile directory. Anyone who can read the directory can then read your keys
+and messages.
+.TP
+.BI \-\-log " FILE"
+Write debug lines to \fIFILE\fR. They hold request paths and errors, never
+message text or keys.
+.TP
+.BI \-\-dev\-server " NAME=URL"
+Reach the server \fINAME\fR at \fIURL\fR, for local test networks. Give it
+once for each server.
+.TP
+.B \-\-demo
+Run with made-up chats and no network, to try the interface.
+.TP
+.B \-\-version
+Print the version and exit.
+.TP
+.BR \-h ", " \-\-help
+Show the help.
+.SH CALLS
+In a direct chat or a group chat, \fB:call\fR rings the others. A ring rings
+the terminal bell and shows a notification; \fB:answer\fR and
+\fB:decline\-call\fR answer it. In a call, \fB:mute\fR, \fB:unmute\fR,
+\fB:deafen\fR, and \fB:hangup\fR. In a community's voice channel,
+\fB:join\-voice\fR and \fB:leave\-voice\fR. A bar above the status bar shows
+the call, how long it has lasted, who's in it, who's muted, and who's
+speaking.
+.PP
+Calls use the default microphone and speakers. They're relayed through your
+homeserver's TURN relay, so nobody learns your IP address.
+\fB:direct\-calls on\fR lets them connect directly, which shows your IP
+address to the people you call and to community servers.
+.SH FILES
+.TP
+.I ~/.config/railcar
+The default profile: the identity, its keys, and its messages, encrypted
+with a key kept in the system keychain.
+.SH SEE ALSO
+The Tieroute specification, at https://rerouteholdings.llc/specs/tieroute.
+.SH AUTHOR
+Reroute Holdings LLC.

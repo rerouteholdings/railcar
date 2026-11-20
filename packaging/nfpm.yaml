@@ -1,0 +1,84 @@
+# nfpm configuration for the Railcar .deb, .rpm, and Arch packages.
+# scripts/release.sh runs nfpm with these set:
+#
+#   VERSION   the version, such as 0.1.0 or 0.1.0-rc.1
+#   ARCH      amd64 or arm64 (nfpm names them x86_64 and aarch64 for rpm and Arch)
+#   STAGE     the directory with the built binary and the man page
+name: railcar
+arch: ${ARCH}
+platform: linux
+version: ${VERSION}
+release: "1"
+section: net
+priority: optional
+maintainer: Reroute Holdings LLC <releases@rerouteholdings.llc>
+vendor: Reroute Holdings LLC
+homepage: https://github.com/rerouteholdings/railcar
+license: Apache-2.0
+description: |-
+  Terminal client for the Tieroute chat protocol
+  Railcar is a terminal client for Tieroute, a federated, end-to-end
+  encrypted chat protocol: direct chats, group chats, communities,
+  calls, and voice channels, in your own terminal.
+
+# Calls reach the speakers and microphone through ALSA or PulseAudio,
+# loaded when a call starts, and the keychain through the Secret Service.
+overrides:
+  deb:
+    recommends:
+      - libasound2 | libasound2t64
+      - gnome-keyring | kwalletmanager
+  rpm:
+    recommends:
+      - alsa-lib
+      - gnome-keyring
+  archlinux:
+    suggests:
+      - alsa-lib
+      - gnome-keyring
+
+rpm:
+  summary: Terminal client for the Tieroute chat protocol
+  group: Applications/Internet
+  packager: Reroute Holdings LLC <releases@rerouteholdings.llc>
+  compression: zstd
+  buildhost: railcar-release
+
+archlinux:
+  packager: Reroute Holdings LLC <releases@rerouteholdings.llc>
+
+contents:
+  - src: ${STAGE}/railcar-linux-${ARCH}
+    dst: /usr/bin/railcar
+    expand: true
+    file_info: { mode: 0755 }
+  - src: ${STAGE}/railcar.1.gz
+    dst: /usr/share/man/man1/railcar.1.gz
+    expand: true
+    file_info: { mode: 0644 }
+  - src: packaging/completions/railcar.bash
+    dst: /usr/share/bash-completion/completions/railcar
+    file_info: { mode: 0644 }
+  - src: packaging/completions/_railcar
+    dst: /usr/share/zsh/vendor-completions/_railcar
+    file_info: { mode: 0644 }
+    packager: deb
+  - src: packaging/completions/_railcar
+    dst: /usr/share/zsh/site-functions/_railcar
+    file_info: { mode: 0644 }
+    packager: rpm
+  - src: packaging/completions/_railcar
+    dst: /usr/share/zsh/site-functions/_railcar
+    file_info: { mode: 0644 }
+    packager: archlinux
+  - src: packaging/completions/railcar.fish
+    dst: /usr/share/fish/vendor_completions.d/railcar.fish
+    file_info: { mode: 0644 }
+  - src: LICENSE
+    dst: /usr/share/licenses/railcar/LICENSE
+    file_info: { mode: 0644 }
+    packager: archlinux
+  - src: LICENSE
+    dst: /usr/share/doc/railcar/copyright
+    file_info: { mode: 0644 }
+    packager: deb
