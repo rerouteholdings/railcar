@@ -427,3 +427,23 @@ func TestErrors(t *testing.T) {
 		t.Fatal("a closed client worked")
 	}
 }
+
+// TestSetConfig changes a group's padding after it was made: messages
+// padded to 256 bytes come out shorter once the group pads nothing.
+func TestSetConfig(t *testing.T) {
+	kat := newDevice(t, "kat")
+	padded := chat
+	padded.Padding = 256
+	kg := must[*Group](t)(kat.c.CreateGroup(kat.s, CreateOptions{GroupID: groupID(), Leaf: kat.leaf(), Config: padded}))
+	before := must[[]byte](t)(kg.Encrypt(kat.s, []byte("ok"), nil))
+	if err := kg.SetConfig(chat); err != nil {
+		t.Fatal(err)
+	}
+	after := must[[]byte](t)(kg.Encrypt(kat.s, []byte("ok"), nil))
+	if len(after)+100 > len(before) {
+		t.Fatalf("%d bytes with padding, %d without", len(before), len(after))
+	}
+	if err := (&Group{c: kat.c, id: groupID()}).SetConfig(chat); err == nil {
+		t.Error("set the configuration of a group that isn't there")
+	}
+}

@@ -516,6 +516,15 @@ impl Client {
 
     // === Messages ===
 
+    /// Sets a group's configuration, as for joining it: what it was made
+    /// or joined with changes only this way, such as its padding.
+    pub fn set_config(&mut self, req: SetConfigReq) -> Result<()> {
+        let group = load(&mut self.groups, &self.provider, &req.group_id)?;
+        group
+            .set_configuration(self.provider.storage(), &join_config(&req.config))
+            .map_err(|e| Error::new(Code::Internal, format!("setting the group's configuration: {e}")))
+    }
+
     pub fn encrypt(&mut self, signer: &Signer, req: EncryptReq) -> Result<Vec<u8>> {
         let group = load(&mut self.groups, &self.provider, &req.group_id)?;
         group.set_aad(req.aad);

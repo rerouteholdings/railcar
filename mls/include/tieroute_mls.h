@@ -81,6 +81,7 @@ int32_t trmls_remove_pending_proposal(TrmlsClient *client, const uint8_t *req, s
 int32_t trmls_clear_pending_proposals(TrmlsClient *client, const uint8_t *group_id, size_t len, TrmlsBuf *out);
 
 /* Messages. */
+int32_t trmls_set_config(TrmlsClient *client, const uint8_t *req, size_t len, TrmlsBuf *out);
 int32_t trmls_encrypt(TrmlsClient *client, const TrmlsSigner *signer, const uint8_t *req, size_t len, TrmlsBuf *out);
 int32_t trmls_process(TrmlsClient *client, const uint8_t *req, size_t len, TrmlsBuf *out);
 

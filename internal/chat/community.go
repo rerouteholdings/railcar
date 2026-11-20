@@ -35,7 +35,7 @@ const KindChannel = "channel"
 // no ratchet tree in Welcomes and GroupInfos, which the community server
 // serves instead; PublicMessages accepted, for code joins; and 5 past
 // epochs kept (§11.1, §16.5).
-var communityConfig = mls.Config{RatchetTreeInWelcome: false, AcceptPublicMessages: true, MaxPastEpochs: 5, Padding: 32}
+var communityConfig = mls.Config{RatchetTreeInWelcome: false, AcceptPublicMessages: true, MaxPastEpochs: 5}
 
 // Community is a community this identity is in (§16).
 type Community struct {

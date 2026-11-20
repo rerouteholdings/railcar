@@ -318,6 +318,13 @@ pub struct GroupInfoInspect {
 }
 
 #[derive(Deserialize)]
+pub struct SetConfigReq {
+    #[serde(with = "b64")]
+    pub group_id: Vec<u8>,
+    pub config: GroupConfig,
+}
+
+#[derive(Deserialize)]
 pub struct EncryptReq {
     #[serde(with = "b64")]
     pub group_id: Vec<u8>,

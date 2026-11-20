@@ -177,6 +177,20 @@ func (g *Group) ClearPendingProposals() error {
 	return err
 }
 
+// SetConfig sets the group's configuration, as for joining it. It's how
+// a group made or joined with another configuration takes a new one, such
+// as a new padding size.
+func (g *Group) SetConfig(cfg Config) error {
+	req := struct {
+		GroupID []byte `json:"group_id"`
+		Config  Config `json:"config"`
+	}{g.id, cfg}
+	_, err := g.c.plain(req, nil, func(p *C.TrmlsClient, r *C.uint8_t, n C.size_t, out *C.TrmlsBuf) C.int32_t {
+		return C.trmls_set_config(p, r, n, out)
+	})
+	return err
+}
+
 // Encrypt makes an application message. aad is its authenticated data,
 // which servers can read (RFC 9420 §6.3.1).
 func (g *Group) Encrypt(s *Signer, plaintext, aad []byte) ([]byte, error) {

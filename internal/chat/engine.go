@@ -173,6 +173,7 @@ func New(c *client.Client, opts Options) (*Engine, error) {
 		events:   make(chan Event, 256),
 	}
 	e.loadPeople()
+	e.unpadGroups()
 	e.calls = newCalls(e, opts.Calls)
 	e.voice = newVoice(e, opts.Calls)
 	return e, nil
@@ -512,3 +513,30 @@ func ptr[T any](v T) *T { return &v }
 
 // profile returns the profile records live in.
 func (e *Engine) profile() *store.Profile { return e.c.Profile() }
+
+// unpadGroups gives every group this device is in the current
+// configuration, so groups made or joined when PrivateMessages carried
+// padding stop padding them: app-messages pad themselves (§11.1, §12).
+func (e *Engine) unpadGroups() {
+	changed := false
+	for _, ch := range e.st.Chats {
+		if ch.Kind == KindChannel || ch.Left || ch.Rejoining {
+			continue
+		}
+		if err := e.dev.mls.Group(mustB64(ch.ID)).SetConfig(chatConfig); err == nil {
+			changed = true
+		}
+	}
+	for _, cm := range e.st.Communities {
+		for id := range cm.Groups {
+			if err := e.dev.mls.Group(mustB64(id)).SetConfig(communityConfig); err == nil {
+				changed = true
+			}
+		}
+	}
+	if changed {
+		if err := e.dev.Save(); err != nil {
+			e.log.Info("chat: saving the groups' configuration", "err", err)
+		}
+	}
+}

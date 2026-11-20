@@ -20,8 +20,9 @@ const recMLS = "mls"
 
 // chatConfig is the OpenMLS configuration of every direct chat and group
 // chat. The ratchet tree goes in each Welcome, since a chat has no other
-// place to get it from (§11.1).
-var chatConfig = mls.Config{RatchetTreeInWelcome: true, MaxPastEpochs: 3, Padding: 32}
+// place to get it from, and PrivateMessages carry no padding: app-messages
+// pad themselves (§11.1, §12).
+var chatConfig = mls.Config{RatchetTreeInWelcome: true, MaxPastEpochs: 3}
 
 // keyPackageLifetime is how long a key package stays valid: 90 days.
 const keyPackageLifetime = 90 * 24 * 60 * 60

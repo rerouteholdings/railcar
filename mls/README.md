@@ -51,6 +51,7 @@ Requests and responses are JSON. Byte strings in them are standard base64 with p
 | `trmls_propose_remove` | A signer, and JSON: the group ID and leaf index | JSON: the proposal and its reference |
 | `trmls_remove_pending_proposal` | JSON: the group ID and reference | Nothing |
 | `trmls_clear_pending_proposals` | A group ID | Nothing |
+| `trmls_set_config` | JSON: the group ID and a configuration, as for joining | Nothing; the group uses the configuration from then on |
 | `trmls_encrypt` | A signer, and JSON: the group ID, plaintext, authenticated data | The application message |
 | `trmls_process` | JSON: the group ID and message | JSON: the kind, epoch, sender, credential identity, authenticated data, and the plaintext, proposal, or staged commit |
 | `trmls_export_secret` | JSON: the group ID, label, context, length, and whether to use the pending commit's epoch | The secret |

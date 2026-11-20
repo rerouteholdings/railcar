@@ -280,6 +280,9 @@ op!(trmls_remove_pending_proposal, GroupReq, |c, r| c
 op!(trmls_clear_pending_proposals, bytes, |c, b| c
     .clear_pending_proposals(b)
     .map(|_| Vec::new()));
+op!(trmls_set_config, SetConfigReq, |c, r| c
+    .set_config(r)
+    .map(|_| Vec::new()));
 op!(trmls_encrypt, signer, EncryptReq, |c, s, r| c.encrypt(s, r));
 op!(trmls_process, ProcessReq, |c, r| to_json(&c.process(r)?));
 op!(trmls_export_secret, ExportReq, |c, r| c.export_secret(r));
