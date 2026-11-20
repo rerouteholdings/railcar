@@ -47,14 +47,15 @@ Print the version and exit.
 Show the help.
 .SH CALLS
 In a direct chat or a group chat, \fB:call\fR rings the others. A ring rings
-the terminal bell and shows a notification; \fB:answer\fR and
-\fB:decline\-call\fR answer it. In a call, \fB:mute\fR, \fB:unmute\fR,
-\fB:deafen\fR, and \fB:hangup\fR. In a community's voice channel,
-\fB:join\-voice\fR and \fB:leave\-voice\fR. A bar above the status bar shows
-the call, how long it has lasted, who's in it, who's muted, and who's
-speaking.
+the terminal bell and shows a notification; Ctrl+Y (\fB:answer\fR) answers
+it, and Ctrl+X (\fB:decline\-call\fR) declines it. In a call, Ctrl+R mutes
+or unmutes, Ctrl+X hangs up, and \fB:deafen\fR stops playing the call. In a
+community's voice channel, \fB:join\-voice\fR joins, and Ctrl+X leaves. A
+bar above the status bar shows the call, how long it has lasted, who's in
+it, who's muted, and who's speaking.
 .PP
-Calls use the default microphone and speakers. They're relayed through your
+Calls use the system's default microphone and speakers, unless you choose
+others with \fB:audio\-devices\fR. They're relayed through your
 homeserver's TURN relay, so nobody learns your IP address.
 \fB:direct\-calls on\fR lets them connect directly, which shows your IP
 address to the people you call and to community servers.

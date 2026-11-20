@@ -103,6 +103,8 @@ Calls (§15.2):
 - SFrame keys: `base_key` is `MLS-Exporter("SFrame 1.0 Tieroute call", call ID, 16)` for the current epoch, and the KID is the leaf index and the epoch's low 4 bits. The sender switches at the next epoch; a receiver keeps the previous epoch's key for 10 seconds.
 - `state` carries mute and deafen, sent again whenever a device joins.
 - Relays (§15.1): calls use only relayed candidates, from `GET turn`, unless the user allows direct calls (`SetDirectCalls`, kept in the chat records). Without a relay, a relay-only call doesn't start, and says why.
+- Three quarters of the way through the credentials' `ttl`, a call or a voice channel fetches new ones from `GET turn`, and gives them to every connection, so a connection made or gathered later uses them (client API, "Call relays"). A failed fetch is tried again after 30 seconds. Connections already up keep their relay allocations.
+- The microphone and speakers are the system's defaults, or the ones chosen with `SetAudioDevices`, by name, kept in the chat records. A chosen device that isn't connected falls back to the default.
 
 Voice channels (§16.4, community server API "Voice"):
 
@@ -148,7 +150,6 @@ for ev := range eng.Events() { ... }
 - Rejoining after an inbox gap or an expired commit (§11.9), and re-creating a stuck direct chat (§11.11).
 - Casting media in a call or a voice channel (§15.3): Railcar receives casts, and never sends one.
 - Rekeying a visit to a voice channel with a new generation (§16.4): a visit keeps generation 0.
-- Fetching new relay credentials before `ttl` runs out during a long call (client API, "Call relays").
 - Checking a message against the sender's leaf in the epoch it was sent in, when the leaf changed since. Such a message is dropped for now.
 
 ## Tests

@@ -43,8 +43,9 @@ go run ./cmd/railcar --demo
    - `:backup-on` opens **Turn on the backup**, which takes a passphrase of six or more random words and shows it as dots (§7.5). `:backup-now` uploads what's new, `:backup` shows the state, `:backup-off` turns it off, and `:restore-backup` restores it, asking for the passphrase when this device needs it.
    - A message that mentions you, or an `@everyone` that counts, says **Mentions you**, rings the terminal bell, and shows a desktop notification: OSC 9 in iTerm2, WezTerm, ghostty, kitty, and Windows Terminal, OSC 777 in foot, urxvt, and VTE-based terminals, and otherwise `notify-send` on Linux or `osascript` on macOS when they're there. It names who and where, never the text. `:notifications` turns them off or on for this run. Typing `@` and a handle in a message mentions that person.
    - `:report spam` reports the latest message from someone else, with the reason (§17.2). Railcar first shows the message, the reason, and who can read the report: the homeserver's admins, or for a channel the community's moderators and the community server. Enter sends it, and f also sends it to the sender's homeserver.
-   - Calls (§15.2): `:call` calls the open direct chat or group chat. A ring rings the terminal bell and shows a desktop notification, as mentions do; `:answer` answers, and `:decline-call` declines. In a call, `:mute`, `:unmute`, `:deafen`, `:undeafen`, and `:hangup`. `:answer` during a call ends it and answers the one waiting. `:direct-calls on` lets calls and voice channels connect directly, which shows your IP address; they're relayed otherwise.
-   - Voice channels (§16.4): `:join-voice` in a voice channel joins it, and `:leave-voice` leaves; `:mute` and `:deafen` work there too.
+   - Calls (§15.2): `:call` calls the open direct chat or group chat. A ring rings the terminal bell and shows a desktop notification, as mentions do; Ctrl+Y or `:answer` answers, and Ctrl+X or `:decline-call` declines. In a call, Ctrl+R mutes or unmutes, Ctrl+X hangs up, and `:mute`, `:unmute`, `:deafen`, `:undeafen`, and `:hangup` work too. Ctrl+Y during a call ends it and answers the one waiting. `:direct-calls on` lets calls and voice channels connect directly, which shows your IP address; they're relayed otherwise.
+   - `:audio-devices` opens **Audio devices**, which lists the microphones and speakers connected now, with **System default** first. Enter chooses one, for the calls and voice channels joined after that, and the profile keeps the choice. A chosen device that isn't connected stays in the list, and calls use the default until it's back.
+   - Voice channels (§16.4): `:join-voice` in a voice channel joins it, and Ctrl+X or `:leave-voice` leaves; Ctrl+R, `:mute`, and `:deafen` work there too.
    - `:reply`, `:edit`, `:delete`, and `:react` act on the latest message: someone else's for replying and reacting, the identity's own for editing and deleting. `:react 🎉` picks the emoji; it's 👍 otherwise, and reacting again with the same emoji takes it back.
 
 The mouse works too: click a chat to open it, click a pane to move to it, and scroll the messages or the chat list.
@@ -59,6 +60,9 @@ The mouse works too: click a chat to open it, click a pane to move to it, and sc
 | Ctrl+P | Anywhere | Open the command palette |
 | Ctrl+N | Anywhere | Add a contact |
 | Ctrl+A | Anywhere | Send a file to the open chat |
+| Ctrl+Y | Anywhere | Answer a call that's ringing |
+| Ctrl+X | Anywhere | Hang up, decline a ring, or leave a voice channel |
+| Ctrl+R | Anywhere | Mute or unmute in a call or a voice channel |
 | Ctrl+C | Anywhere | Quit |
 | ?, : | Outside the composer | Show help, or open the command palette |
 | Up, Down, Enter, / | The chat list | Move, open a chat, find a chat |
@@ -93,6 +97,7 @@ The interface reaches the protocol only through `Backend`, in `backend.go`. It c
 | `FinishApproval` | Adds the new device once it has answered, or returns false while it hasn't |
 | `CancelApproval` | Stops adding a device, and forgets its code |
 | `Devices`, `RemoveDevice` | List the identity's devices, and remove one (§7.6) |
+| `AudioDevices`, `SetAudioDevices` | List the microphones and speakers, and choose them for calls and voice channels |
 | `Connect` | Starts the live stream, which reconnects on its own |
 | `Events` | A channel of `StreamChanged`, `ChatChanged`, `ChatRemoved`, `MessageAdded`, `MessageChanged`, `Typing`, `IdentityChanged`, `CallChanged`, and `SignedOut` events. A change of someone's presence or profile comes as a `ChatChanged` for each chat they're in |
 | `Chats` | Every direct chat and group chat, and every contact request, as a `ContactRequest` or `SentRequest` |
