@@ -114,6 +114,9 @@ func (e *Engine) fetchMissed(ctx context.Context, ch *Chat) {
 		after = ch.Epoch - 1
 	}
 	commits, err := e.c.FetchCommits(ctx, ch.ID, after, hub)
+	if err == nil || unreachable(err) {
+		e.noteHubAnswer(ch, err == nil)
+	}
 	if expired(err) {
 		// The hub no longer has what this device missed (§11.9).
 		e.rejoinDue = true

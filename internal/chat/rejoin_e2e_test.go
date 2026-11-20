@@ -5,6 +5,7 @@ import (
 	"context"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/rerouteholdings/railcar/internal/testnet"
 )
@@ -163,4 +164,90 @@ func TestE2EInteropRejoin(t *testing.T) {
 		}
 	}
 	t.Fatal("Reroute's new device never read Railcar's message")
+}
+
+// TestE2ERailcarStuckDirect: a direct chat whose commits have failed for
+// an hour offers re-creating it, once, and re-creating it carries the
+// conversation on for both Railcar identities (§11.11).
+func TestE2ERailcarStuckDirect(t *testing.T) {
+	o := testnet.Start(t, testnet.Rerouted(t), "a.test", "b.test")
+	ctx := context.Background()
+	kat := newRailcar(t, o, "a.test", "kat")
+	ravi := newRailcar(t, o, "b.test", "ravi")
+	befriendRailcars(t, ravi, kat, "kat.a.test")
+	ch := kat.chatWith("ravi.b.test")
+	if _, err := ravi.e.SendText(ctx, ch.ID, "before it got stuck", ""); err != nil {
+		t.Fatal(err)
+	}
+	settle()
+	kat.sync()
+
+	kat.e.mu.Lock()
+	kat.e.st.Chats[ch.ID].FailingSince = time.Now().Add(-2 * time.Hour).Unix()
+	kat.e.checkStuck()
+	kat.e.checkStuck()
+	kat.e.mu.Unlock()
+	c, _ := kat.e.Chat(ch.ID)
+	if c.Stuck == "" {
+		t.Fatal("no offer to re-create the chat")
+	}
+	n := 0
+	msgs, _ := kat.e.Messages(ch.ID)
+	for _, m := range msgs {
+		if m.System && strings.HasPrefix(m.Body, "This chat seems stuck") {
+			n++
+		}
+	}
+	if n != 1 {
+		t.Errorf("%d offers, not one", n)
+	}
+
+	nc, err := kat.e.RecreateDirect(ctx, ch.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if nc.ID == ch.ID || nc.Stuck != "" {
+		t.Fatalf("the re-created chat: %+v", nc)
+	}
+	settle()
+	ravi.sync()
+	rch := ravi.chatWith("kat.a.test")
+	if rch.ID != nc.ID {
+		t.Fatal("Ravi isn't in the re-created chat")
+	}
+	ravi.find(rch.ID, "before it got stuck")
+	kat.find(nc.ID, "before it got stuck")
+	if _, err := ravi.e.SendText(ctx, rch.ID, "in the new chat", ""); err != nil {
+		t.Fatal(err)
+	}
+	settle()
+	kat.sync()
+	kat.find(nc.ID, "in the new chat")
+}
+
+// TestE2EInteropRecreateDirect: Railcar re-creates its direct chat with
+// Reroute, which carries on in the new one (§11.11).
+func TestE2EInteropRecreateDirect(t *testing.T) {
+	o := testnet.Start(t, testnet.Rerouted(t), "a.test", "b.test")
+	ctx := context.Background()
+	kat := newRailcar(t, o, "a.test", "kat")
+	ravi := newRerouteCLI(t, "ravi")
+	ravi.run("v2", "register", "ravi", "--server", o["b.test"], "--invite", testnet.SignupCode)
+	befriend(t, kat, ravi, "kat.a.test")
+	ch := kat.chatWith("ravi.b.test")
+	nc, err := kat.e.RecreateDirect(ctx, ch.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := kat.e.SendText(ctx, nc.ID, "in the re-created chat", ""); err != nil {
+		t.Fatal(err)
+	}
+	settle()
+	if out := ravi.run("sync"); !strings.Contains(out, "in the re-created chat") {
+		t.Errorf("Reroute didn't read the re-created chat: %s", out)
+	}
+	ravi.run("send", "kat.a.test", "Reroute in the new chat")
+	settle()
+	kat.sync()
+	kat.find(nc.ID, "Reroute in the new chat")
 }

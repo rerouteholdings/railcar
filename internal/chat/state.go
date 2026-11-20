@@ -96,6 +96,15 @@ type Chat struct {
 	// Rejoining is set while this device, back as a new device, waits for
 	// a member to add it again (§11.9).
 	Rejoining bool `json:"rejoining,omitempty"`
+	// FailingSince is when commits here started failing, other than by
+	// losing a race, and HubDownSince when the hub stopped answering;
+	// PendingSince is when a commit started waiting for a check. Each is
+	// zero when it isn't so. Stuck says why re-creating the chat is
+	// offered (§11.11).
+	FailingSince int64  `json:"failing_since,omitempty"`
+	HubDownSince int64  `json:"hub_down_since,omitempty"`
+	PendingSince int64  `json:"pending_since,omitempty"`
+	Stuck        string `json:"stuck,omitempty"`
 
 	Unread       int    `json:"unread"`
 	LastActivity int64  `json:"last_activity"`

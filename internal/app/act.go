@@ -229,6 +229,12 @@ func act(ctx context.Context, eng *chat.Engine, chatID string, a ui.Action) (str
 		}
 		return "The group's hub is your homeserver now", nil
 	case "recreate":
+		if c.Kind == chat.KindDirect {
+			if _, err := eng.RecreateDirect(ctx, chatID); err != nil {
+				return "", err
+			}
+			return "Re-created the chat. Its history carries on", nil
+		}
 		_, err := eng.RecreateGroup(ctx, chatID)
 		var miss *chat.MissingError
 		if err != nil && !errors.As(err, &miss) {

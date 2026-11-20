@@ -260,6 +260,7 @@ func (e *Engine) Run(ctx context.Context) error {
 			e.retrySync(ctx)
 			e.mu.Lock()
 			e.maybeBackup(ctx)
+			e.checkStuck()
 			e.mu.Unlock()
 			continue
 		case got, ok := <-events:

@@ -130,6 +130,29 @@ func (e *Engine) RecreateGroup(ctx context.Context, chat string) (Chat, error) {
 	return ch.public(), err
 }
 
+// RecreateDirect re-creates a stuck direct chat: a new direct chat with the
+// same contact, with this identity's homeserver as hub and every current
+// device on both sides. A direct chat re-created between the same two
+// people is the same conversation, so the history carries on, and the
+// contact's app switches to it at once (§11.11).
+func (e *Engine) RecreateDirect(ctx context.Context, chat string) (Chat, error) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	old, ok := e.st.Chats[chat]
+	if !ok || old.Kind != KindDirect || old.Left {
+		return Chat{}, errors.New("chat: that isn't a direct chat you're in")
+	}
+	if c := e.st.Contacts[old.Peer]; c == nil || c.State != StateContact {
+		return Chat{}, errors.New("chat: they aren't your contact anymore")
+	}
+	ch, err := e.createDirect(ctx, old.Peer)
+	if err != nil {
+		return Chat{}, err
+	}
+	e.systemLine(ch, "You re-created this chat")
+	return ch.public(), nil
+}
+
 func joinNames(n []string) string {
 	switch len(n) {
 	case 0:

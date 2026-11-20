@@ -273,14 +273,18 @@ func (e *Engine) commit(ctx context.Context, ch *Chat, g *mls.Group, opts mls.Co
 	if err != nil {
 		g.ClearPendingCommit()
 		e.dev.Save()
+		e.noteHub(ch, err)
 		return err
 	}
 	r := results[0]
 	if r.Status != "sent" {
 		g.ClearPendingCommit()
 		e.dev.Save()
-		return &wire.Error{Code: r.Error, Msg: "the hub refused the commit"}
+		err := &wire.Error{Code: r.Error, Msg: "the hub refused the commit"}
+		e.noteHub(ch, err)
+		return err
 	}
+	e.noteHub(ch, nil)
 	if r.Receipt == nil {
 		g.ClearPendingCommit()
 		e.dev.Save()

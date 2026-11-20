@@ -124,6 +124,9 @@ func newCommandPalette(a *App, m *mainView) *commandPalette {
 	if c, ok := m.activeChat(); ok && (c.Kind == GroupChat || c.Kind == DirectChat) {
 		cmds = append([]command{argCommand("Send read receipts in this chat: on or off", "receipts", "read-receipts", "on or off", false)}, cmds...)
 	}
+	if c, ok := m.activeChat(); ok && c.Kind == DirectChat {
+		cmds = append([]command{{label: "Re-create a stuck chat", names: []string{"recreate"}, run: func(a *App) tea.Cmd { return a.main.act(a, "recreate", "", "", false) }}}, cmds...)
+	}
 	if c, ok := m.activeChat(); ok && c.IsChannel() {
 		cmds = append(communityCommands(c), cmds...)
 	}
