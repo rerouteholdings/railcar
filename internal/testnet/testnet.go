@@ -57,6 +57,48 @@ func Start(t *testing.T, bin string, names ...string) map[string]string {
 // result has every name's origin.
 func StartWith(t *testing.T, bin string, names []string, communities map[string]string) map[string]string {
 	t.Helper()
+	return start3(t, bin, names, communities, nil)
+}
+
+// Relays are the TURN relays StartRelayed runs, one per homeserver.
+type Relays struct {
+	// Logs are the relays' log files, by homeserver name.
+	Logs map[string]string
+}
+
+// StartRelayed is Start, with a coturn relay for each homeserver, which
+// GET turn hands out (§15.1). It skips the test unless coturn's
+// turnserver is installed.
+func StartRelayed(t *testing.T, bin string, communities map[string]string, names ...string) (map[string]string, *Relays) {
+	t.Helper()
+	turn, err := exec.LookPath("turnserver")
+	if err != nil {
+		t.Skip("coturn's turnserver isn't installed")
+	}
+	r := &Relays{Logs: map[string]string{}}
+	extra := map[string]string{}
+	for i, n := range names {
+		port := FreePort(t)
+		secret := "relay-secret-for-" + n
+		dir := t.TempDir()
+		r.Logs[n] = filepath.Join(dir, "turn.log")
+		lo := 41000 + i*200 + port%100
+		cmd := exec.Command(turn, "-n", "--listening-ip=127.0.0.1", "--relay-ip=127.0.0.1", fmt.Sprintf("--listening-port=%d", port),
+			"--use-auth-secret", "--static-auth-secret="+secret, "--realm="+n, "--no-tls", "--no-cli",
+			"--allow-loopback-peers", "-v", fmt.Sprintf("--min-port=%d", lo), fmt.Sprintf("--max-port=%d", lo+99),
+			"--log-file="+r.Logs[n], "--simple-log")
+		if err := cmd.Start(); err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { cmd.Process.Kill(); cmd.Wait() })
+		extra[n] = fmt.Sprintf("REROUTED_TURN_URLS=turn:127.0.0.1:%d?transport=udp\nREROUTED_TURN_SECRET=%s\n", port, secret)
+	}
+	time.Sleep(500 * time.Millisecond)
+	return start3(t, bin, names, communities, extra), r
+}
+
+func start3(t *testing.T, bin string, names []string, communities map[string]string, extra map[string]string) map[string]string {
+	t.Helper()
 	origins := map[string]string{}
 	ports := map[string]int{}
 	var peers []string
@@ -72,7 +114,7 @@ func StartWith(t *testing.T, bin string, names []string, communities map[string]
 		served[home] = append(served[home], c+"="+origins[c])
 	}
 	for _, n := range names {
-		start(t, bin, n, ports[n], origins[n], strings.Join(peers, ","), strings.Join(served[n], ","))
+		start(t, bin, n, ports[n], origins[n], strings.Join(peers, ","), strings.Join(served[n], ","), extra[n])
 	}
 	for c := range communities {
 		wait(t, c, origins[c])
@@ -90,7 +132,7 @@ func CommunityURLs(origins map[string]string, communities map[string]string) str
 	return strings.Join(out, ",")
 }
 
-func start(t *testing.T, bin, name string, port int, origin, peers, communities string) {
+func start(t *testing.T, bin, name string, port int, origin, peers, communities, extra string) {
 	t.Helper()
 	dir := t.TempDir()
 	env := filepath.Join(dir, "env")
@@ -101,6 +143,7 @@ func start(t *testing.T, bin, name string, port int, origin, peers, communities 
 	if communities != "" {
 		conf += fmt.Sprintf("REROUTED_COMMUNITIES=%s\nREROUTED_COMMUNITY_CODE=%s\n", communities, CommunityCode)
 	}
+	conf += extra
 	if err := os.WriteFile(env, []byte(conf), 0o600); err != nil {
 		t.Fatal(err)
 	}

@@ -393,3 +393,116 @@ func TestE2EInteropCalls(t *testing.T) {
 	}
 	waitFor(t, "the call to end", func() bool { p := phase(kat.e); return p == CallEnded || p == "" })
 }
+
+// TestE2ECallsRelayOnly calls with direct connections off, the default,
+// so media goes only through each homeserver's TURN relay (§15.1,
+// §15.2): Railcar to Railcar across two servers, then Railcar to Reroute.
+// It needs coturn.
+func TestE2ECallsRelayOnly(t *testing.T) {
+	bin := testnet.Rerouted(t)
+	o, relays := testnet.StartRelayed(t, bin, map[string]string{"c.test": "a.test"}, "a.test", "b.test")
+	ctx := context.Background()
+	kat := newCaller(t, ctx, o, "a.test", "kat", 440)
+	ravi := newCaller(t, ctx, o, "b.test", "ravi", 660)
+	for _, c := range []*caller{kat, ravi} {
+		if err := c.e.SetDirectCalls(false); err != nil {
+			t.Fatal(err)
+		}
+	}
+	chat := callFriends(t, ctx, kat, ravi)
+	if err := kat.e.StartCall(ctx, chat); err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, "Ravi's ring", func() bool { return phase(ravi.e) == CallRinging })
+	if err := ravi.e.AnswerCall(ctx, chat); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if t.Failed() {
+			for n, f := range relays.Logs {
+				b, _ := os.ReadFile(f)
+				t.Logf("%s's relay:\n%s", n, b)
+			}
+		}
+	})
+	waitFor(t, "the call to connect", func() bool { return phase(kat.e) == CallActive && phase(ravi.e) == CallActive })
+	if c, _ := kat.e.Call(); !c.Relay {
+		t.Error("the call isn't relay-only")
+	}
+	time.Sleep(time.Second)
+	hears(t, "kat", kat.tone.record(2*time.Second), []float64{660}, 440)
+	hears(t, "ravi", ravi.tone.record(2*time.Second), []float64{440}, 660)
+	kat.e.HangUp(ctx)
+	for _, n := range []string{"a.test", "b.test"} {
+		b, _ := os.ReadFile(relays.Logs[n])
+		if !strings.Contains(strings.ToLower(string(b)), "allocation") {
+			t.Errorf("%s's relay carried nothing", n)
+		}
+	}
+
+	// Reroute's command-line client, relay-only too (no --direct).
+	lee := newRerouteCLI(t, "lee")
+	dir := t.TempDir()
+	writeTone(t, filepath.Join(dir, "lee.wav"), 880, 12)
+	lee.run("v2", "register", "lee", "--server", o["b.test"], "--invite", testnet.SignupCode)
+	if _, err := kat.e.Add(ctx, lastLine(lee.run("v2", "invite"))); err != nil {
+		t.Fatal(err)
+	}
+	settle()
+	lee.run("sync")
+	lee.run("accept", "kat.a.test")
+	var lchat string
+	waitFor(t, "the chat with Lee", func() bool {
+		for _, c := range kat.e.Contacts() {
+			if c.Handle == "lee.b.test" && c.Chat != "" {
+				lchat = c.Chat
+				return true
+			}
+		}
+		return false
+	})
+	waitFor(t, "the call to clear", func() bool { return phase(kat.e) == "" })
+	heard := filepath.Join(dir, "lee-heard.wav")
+	wait := lee.start("answer", "--play", filepath.Join(dir, "lee.wav"), "--record", heard, "--seconds", "6", "--wait", "40")
+	time.Sleep(2 * time.Second)
+	if err := kat.e.StartCall(ctx, lchat); err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, "the call to connect", func() bool { return phase(kat.e) == CallActive })
+	time.Sleep(time.Second)
+	hears(t, "kat", kat.tone.record(2*time.Second), []float64{880}, 440)
+	wait()
+	if s := readWAV(t, heard); audio.Power(s, 440) < 1 {
+		t.Errorf("Reroute heard %.3g of Railcar's 440 Hz", audio.Power(s, 440))
+	}
+
+	// A voice channel, reached through each homeserver's relay.
+	if _, err := kat.e.CreateCommunity(ctx, "c.test", "Night shift", "", testnet.CommunityCode); err != nil {
+		t.Fatal(err)
+	}
+	lounge, err := kat.e.AddChannel(ctx, "c.test", "Lounge", "", ChannelOptions{Voice: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	code, err := kat.e.MakeCode(ctx, "c.test", 7, 5)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ravi.e.JoinCommunity(ctx, code); err != nil {
+		t.Fatal(err)
+	}
+	ravi.channelChat("c.test", "Lounge")
+	waitFor(t, "the call to clear", func() bool { return phase(kat.e) == "" })
+	for _, c := range []*caller{kat, ravi} {
+		if err := c.e.JoinVoice(ctx, lounge); err != nil {
+			t.Fatal(err)
+		}
+	}
+	waitFor(t, "both keys", func() bool { return keyedOthers(kat.e) == 1 && keyedOthers(ravi.e) == 1 })
+	if !voiceOf(kat.e).Relay {
+		t.Error("the visit isn't relay-only")
+	}
+	time.Sleep(2 * time.Second)
+	hears(t, "kat", kat.tone.record(2*time.Second), []float64{660}, 440)
+	hears(t, "ravi", ravi.tone.record(2*time.Second), []float64{440}, 660)
+}
