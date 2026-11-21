@@ -806,7 +806,7 @@ func (e *Engine) applyChannel(ctx context.Context, cm *Community, g *CGroup, cha
 	if t == CVoiceKey || t == CVoiceMute {
 		// Voice channel keys and mute state: never messages (§16.4).
 		if live {
-			return e.voice.content(cm.Server, channel, from, t, am)
+			return e.voice.content(cm.Server, channel, from, wire.EncodeB64(mk.K), t, am)
 		}
 		return nil
 	}

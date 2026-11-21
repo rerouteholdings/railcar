@@ -80,6 +80,7 @@ type VoiceInfo struct {
 // generation; each stream's keys come from it (§16.4).
 type vkey struct {
 	id    string
+	dev   string // the device key that sent it, base64url
 	base  []byte
 	keys  map[uint8]*sframe.Key // by stream
 	at    time.Time
@@ -507,7 +508,7 @@ func (e *Engine) voiceSend(server string, channel uint64, content any, ephemeral
 
 // content takes voice-key and voice-mute content from a channel's group.
 // The caller holds e.mu, so this only queues the work.
-func (v *voice) content(server string, channel uint64, from, t string, am AppMessage) error {
+func (v *voice) content(server string, channel uint64, from, dev, t string, am AppMessage) error {
 	chat := chanID(server, channel)
 	switch t {
 	case CVoiceKey:
@@ -515,18 +516,18 @@ func (v *voice) content(server string, channel uint64, from, t string, am AppMes
 		if err := wire.Unmarshal(am.C, &k); err != nil || len(k.Key) != 32 || k.Channel != channel {
 			return errors.New("chat: a malformed voice-key")
 		}
-		v.do(func() { v.takeKey(chat, from, k) })
+		v.do(func() { v.takeKey(chat, from, dev, k) })
 	case CVoiceMute:
 		var m VoiceMute
 		if err := wire.Unmarshal(am.C, &m); err != nil || m.Channel != channel {
 			return errors.New("chat: a malformed voice-mute")
 		}
-		v.do(func() { v.takeMute(chat, from, m) })
+		v.do(func() { v.takeMute(chat, from, dev, m) })
 	}
 	return nil
 }
 
-func (v *voice) takeKey(chat, from string, k VoiceKey) {
+func (v *voice) takeKey(chat, from, dev string, k VoiceKey) {
 	if len(k.Key) != 32 {
 		return
 	}
@@ -541,11 +542,11 @@ func (v *voice) takeKey(chat, from string, k VoiceKey) {
 	if old := m[kid]; old != nil && bytes.Equal(old.base, k.Key) {
 		return // sent again for a newcomer
 	}
-	vk := &vkey{id: from, base: bytes.Clone(k.Key), keys: map[uint8]*sframe.Key{}, at: time.Now()}
+	vk := &vkey{id: from, dev: dev, base: bytes.Clone(k.Key), keys: map[uint8]*sframe.Key{}, at: time.Now()}
 	for _, s := range v.states[chat] {
 		if s.Visit == k.Visit {
-			if s.ID != from {
-				return // the visit is someone else's
+			if s.ID != from || s.Dev != dev {
+				return // the visit is another identity's or device's (§16.4)
 			}
 			vk.seen = true
 		}
@@ -560,17 +561,18 @@ func (v *voice) takeKey(chat, from string, k VoiceKey) {
 	}
 }
 
-func (v *voice) takeMute(chat, from string, m VoiceMute) {
+func (v *voice) takeMute(chat, from, dev string, m VoiceMute) {
 	v.mu.Lock()
 	defer v.mu.Unlock()
-	// Only from the identity the latest voice-state lists for the visit.
-	owner := ""
+	// Only from the identity and device the latest voice-state lists for
+	// the visit (§16.4).
+	var owner vstate
 	for _, s := range v.states[chat] {
 		if s.Visit == m.Visit {
-			owner = s.ID
+			owner = s
 		}
 	}
-	if owner != from {
+	if owner.ID != from || owner.Dev != dev {
 		return
 	}
 	mm := v.mutes[chat]
@@ -622,16 +624,16 @@ func (v *voice) handleFrame(server, t string, channel uint64, vis uint32, sdp, d
 		v.mu.Lock()
 		prev := v.states[chat]
 		v.states[chat] = in
-		listed := map[uint32]string{}
+		listed := map[uint32]vstate{}
 		for _, s := range in {
-			listed[s.Visit] = s.ID
+			listed[s.Visit] = s
 		}
 		// Keys and mute states of visits that left, or that belong to
-		// someone else, go.
+		// another identity or device, go (§16.4).
 		for kid, k := range v.keys[chat] {
 			owner, ok := listed[uint32(kid>>8)]
 			switch {
-			case ok && owner != k.id:
+			case ok && (owner.ID != k.id || owner.Dev != k.dev):
 				delete(v.keys[chat], kid)
 			case ok:
 				k.seen = true
