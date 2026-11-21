@@ -80,7 +80,8 @@ var ErrRetryLater = errors.New("identity: a previous home can't be reached to co
 // FirstFetch checks a validated chain the receiver holds nothing of yet
 // (§6.5): it has to come from its current home, and every device-signed
 // set-home that no later recovery-signed entry vouches for is confirmed with
-// the home before it. A home that answers 404 or 410 is skipped.
+// the home before it. A home that answers 404 or 410 counts as unreachable:
+// honest homes keep a tombstone, so one that answers so has lost its data.
 func FirstFetch(cand *Chain, from string, ask Asker) error {
 	if cand.State.Home != from {
 		return fmt.Errorf("%w: a first copy comes from the identity's home, %s, not %s", ErrInvalidChain, cand.State.Home, from)
@@ -94,9 +95,7 @@ func FirstFetch(cand *Chain, from string, ask Asker) error {
 		}
 		a := ask(info.HomeBefore)
 		switch {
-		case a.Gone:
-			continue
-		case a.Unreachable:
+		case a.Gone, a.Unreachable:
 			return ErrRetryLater
 		case !contains(a.Chain, info.Seq, info.Hash):
 			return ErrUnconfirmed
