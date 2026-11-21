@@ -54,7 +54,14 @@ type ServerKey struct {
 	Pub wire.Bytes `json:"pub"`
 	NBF int64      `json:"nbf"`
 	Exp int64      `json:"exp"`
+	// Revoked, when set, is the time from which nothing the key signs
+	// counts (§5.1).
+	Revoked int64 `json:"revoked,omitempty"`
 }
+
+// maxKeyLife is the longest a server key may last, from nbf to exp: a
+// key that claims longer is ignored (§5.1).
+const maxKeyLife = 400 * 24 * 60 * 60
 
 // ServerDoc is a server document (§5.1).
 type ServerDoc struct {
@@ -197,6 +204,12 @@ func (r *Resolver) Refresh(ctx context.Context, name string) (*ServerDoc, error)
 		}
 	}
 	for _, k := range doc.Keys {
+		if k.Exp-k.NBF > maxKeyLife {
+			continue
+		}
+		if old, ok := ks[k.Kid]; ok && old.Revoked != 0 && (k.Revoked == 0 || old.Revoked < k.Revoked) {
+			k.Revoked = old.Revoked // a revocation never comes undone
+		}
 		ks[k.Kid] = k
 	}
 	return doc, nil
@@ -357,9 +370,27 @@ func (r *Resolver) Key(ctx context.Context, name, kid string, at time.Time) ([]b
 // VerifyServerSigned checks an object a server signed with kid, such as a
 // move reservation (§6.6), at time at.
 func (r *Resolver) VerifyServerSigned(ctx context.Context, name string, s wire.Signed, at time.Time) error {
+	return r.VerifyServerSignedAt(ctx, name, s, at, at.Unix())
+}
+
+// VerifyServerSignedAt is VerifyServerSigned for an object that says when
+// it was signed, such as a commit receipt's ts: a key revoked at or before
+// that time doesn't count for it (§5.1). A key the cached document doesn't
+// show revoked is checked against a fresh copy once.
+func (r *Resolver) VerifyServerSignedAt(ctx context.Context, name string, s wire.Signed, at time.Time, signed int64) error {
 	pub, err := r.Key(ctx, name, s.Kid, at)
 	if err != nil {
 		return err
 	}
+	if r.revoked(name, s.Kid, signed) {
+		return fmt.Errorf("discovery: %s revoked its key %q before this was signed", name, s.Kid)
+	}
 	return sig.VerifyServer(s, s.Kid, pub)
+}
+
+func (r *Resolver) revoked(name, kid string, signed int64) bool {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	k := r.keys[name][kid]
+	return k.Revoked != 0 && k.Revoked <= signed
 }

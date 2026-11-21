@@ -351,7 +351,7 @@ func (e *Engine) checkReceiptFrom(ctx context.Context, hub string, r wire.Signed
 	if b.Hub != hub || !bytes.Equal(b.Group, group) || b.Epoch != epoch || !bytes.Equal(b.Hash, h[:]) {
 		return b, errors.New("chat: the receipt is for another hub, group, epoch, or commit")
 	}
-	if err := e.c.VerifyServerSigned(ctx, hub, r); err != nil {
+	if err := e.c.VerifyServerSignedAt(ctx, hub, r, b.TS); err != nil {
 		return b, retryable{fmt.Errorf("chat: the receipt's signature: %w", err)}
 	}
 	return b, nil

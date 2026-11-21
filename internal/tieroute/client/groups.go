@@ -134,3 +134,10 @@ func (c *Client) fetchServerDoc(ctx context.Context, name string) ([]byte, error
 func (c *Client) VerifyServerSigned(ctx context.Context, server string, s wire.Signed) error {
 	return c.resolver.VerifyServerSigned(ctx, server, s, c.clock.Now())
 }
+
+// VerifyServerSignedAt is VerifyServerSigned for an object signed at a
+// time it gives, such as a receipt's ts: a key the server revoked by then
+// doesn't count (§5.1).
+func (c *Client) VerifyServerSignedAt(ctx context.Context, server string, s wire.Signed, signed int64) error {
+	return c.resolver.VerifyServerSignedAt(ctx, server, s, c.clock.Now(), signed)
+}
