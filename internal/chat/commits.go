@@ -244,6 +244,10 @@ func (e *Engine) processCommit(ctx context.Context, ch *Chat, b buffered) error 
 	}
 	h := sha256.Sum256(b.Data)
 	ch.applied(b.Epoch, h[:])
+	if why := receiptTimeWrong(ch.LastReceiptTS, receipt.TS, e.c.Clock().Now().Unix()); why != "" {
+		e.systemLine(ch, "This chat's hub, "+ch.Hub+", gave a change a wrong time ("+why+"). Type :move-hub to move the hub to your homeserver")
+	}
+	ch.LastReceiptTS = receipt.TS
 	oldMembers, oldAdmins := ch.Members, ch.Admins
 	ch.Epoch, ch.Hub, ch.Members = after.Epoch, j.next.Hub, members(after)
 	ch.Admins = slices.Clone(j.next.Admins)
@@ -663,23 +667,8 @@ func checkGroupChange(old, next *GroupExt, admin bool, after map[string]bool, ap
 			return errors.New("a member who isn't an admin moved the hub")
 		}
 	}
-	// used: entries stay until their time has passed, and the only new
-	// one is the approval this commit uses (§11.8).
-	for id, ts := range old.Used {
-		if _, ok := next.Used[id]; !ok && ts >= receiptTS {
-			return errors.New("the commit drops a used approval that hasn't expired")
-		}
-	}
-	for id, ts := range next.Used {
-		if ots, ok := old.Used[id]; ok {
-			if ots != ts {
-				return errors.New("the commit changes a used approval")
-			}
-			continue
-		}
-		if appr == nil || id != appr.Request || ts != appr.Exp {
-			return errors.New("the commit adds to used without using that approval")
-		}
+	if err := checkUsed(old, next, receiptTS, appr); err != nil {
+		return err
 	}
 	if appr == nil && next.Approval != nil && (old.Approval == nil || !bytes.Equal(next.Approval.Canonical(), old.Approval.Canonical())) {
 		if !admin {
@@ -796,4 +785,41 @@ func newerBound(me string, bound, have map[string]int) []string {
 	}
 	slices.Sort(out)
 	return out
+}
+
+// checkUsed checks a commit's used list against the one before it: entries
+// stay until their time has passed, no entry changes, and the only new one
+// is the approval the commit uses, if any (§11.8, §16.6).
+func checkUsed(old, next *GroupExt, receiptTS int64, appr *AddApproval) error {
+	for id, ts := range old.Used {
+		if _, ok := next.Used[id]; !ok && ts >= receiptTS {
+			return errors.New("the commit drops a used approval that hasn't expired")
+		}
+	}
+	for id, ts := range next.Used {
+		if ots, ok := old.Used[id]; ok {
+			if ots != ts {
+				return errors.New("the commit changes a used approval")
+			}
+			continue
+		}
+		if appr == nil || id != appr.Request || ts != appr.Exp {
+			return errors.New("the commit adds to used without using that approval")
+		}
+	}
+	return nil
+}
+
+// receiptTimeWrong says what's wrong with a commit receipt's ts, or "": a
+// ts earlier than the previous epoch's commit's, or more than an hour after
+// this device's clock (§11.8, "Receipt times"). It's a warning, never a
+// reason to refuse the commit.
+func receiptTimeWrong(prev, ts, now int64) string {
+	switch {
+	case prev != 0 && ts < prev:
+		return "earlier than the change before it"
+	case ts > now+3600:
+		return "more than an hour ahead"
+	}
+	return ""
 }

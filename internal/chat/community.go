@@ -110,6 +110,9 @@ type CGroup struct {
 	Epoch   uint64                `json:"epoch"`
 	Members []string              `json:"members"`
 	Applied map[uint64]wire.Bytes `json:"applied,omitempty"`
+	// LastReceiptTS is the ts of the receipt for the last commit applied
+	// (§11.8).
+	LastReceiptTS int64 `json:"last_receipt_ts,omitempty"`
 	// Buffered holds deliveries for a later epoch (§11.6).
 	Buffered []buffered `json:"buffered,omitempty"`
 	// Pending is set while a commit waits for chain entries this device

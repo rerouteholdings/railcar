@@ -96,6 +96,9 @@ type Chat struct {
 	// Rejoining is set while this device, back as a new device, waits for
 	// a member to add it again (§11.9).
 	Rejoining bool `json:"rejoining,omitempty"`
+	// LastReceiptTS is the ts of the hub's receipt for the last commit
+	// this device applied, to notice a hub's time going back (§11.8).
+	LastReceiptTS int64 `json:"last_receipt_ts,omitempty"`
 	// FailingSince is when commits here started failing, other than by
 	// losing a race, and HubDownSince when the hub stopped answering;
 	// PendingSince is when a commit started waiting for a check. Each is

@@ -290,7 +290,11 @@ func (e *Engine) commit(ctx context.Context, ch *Chat, g *mls.Group, opts mls.Co
 		e.dev.Save()
 		return errors.New("chat: the hub accepted the commit without a receipt")
 	}
-	if _, err := e.checkReceipt(ctx, ch, *r.Receipt, g.ID(), epoch, res.Commit); err != nil {
+	rc, err := e.checkReceipt(ctx, ch, *r.Receipt, g.ID(), epoch, res.Commit)
+	if err == nil {
+		ch.LastReceiptTS = rc.TS
+	}
+	if err != nil {
 		// The commit is sequenced, so the group has moved on; a bad
 		// receipt means the hub can't be trusted.
 		g.ClearPendingCommit()

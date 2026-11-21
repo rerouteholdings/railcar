@@ -365,15 +365,27 @@ func (e *Engine) judgeCommunityCommit(ctx context.Context, cm *Community, g *CGr
 				newPeople = append(newPeople, id)
 			}
 		}
+		var old *GroupExt
+		if data, _ := before.Extension(ExtGroup); data != nil {
+			old, _ = ParseGroupExt(data)
+		}
+		if old == nil {
+			old = &GroupExt{}
+		}
+		if members {
+			// used, in the members group as in chats (§16.6).
+			var appr *AddApproval
+			if len(newPeople) > 0 && next.Approval != nil {
+				if a, err := parseApproval(*next.Approval); err == nil {
+					appr = &a
+				}
+			}
+			if err := checkUsed(old, next, receiptTS, appr); err != nil {
+				return bad("%v", err)
+			}
+		}
 		if members && len(newPeople) > 0 {
 			// An approval join (§16.6).
-			var old *GroupExt
-			if data, _ := before.Extension(ExtGroup); data != nil {
-				old, _ = ParseGroupExt(data)
-			}
-			if old == nil {
-				old = &GroupExt{}
-			}
 			if err := e.checkCommunityApproval(ctx, cm, g, old, next, st, committer, newPeople, before.Epoch, receiptTS); err != nil {
 				var r retryable
 				if errors.As(err, &r) {
@@ -549,6 +561,12 @@ func (e *Engine) cprocessCommit(ctx context.Context, cm *Community, g *CGroup, b
 		}
 	}
 	g.Epoch, g.Members = after.Epoch, members(after)
+	if why := receiptTimeWrong(g.LastReceiptTS, receipt.TS, e.c.Clock().Now().Unix()); why != "" {
+		if ch := e.firstChannel(cm); ch != nil {
+			e.systemLine(ch, "The community server, "+cm.Server+", gave a change a wrong time ("+why+")")
+		}
+	}
+	g.LastReceiptTS = receipt.TS
 	e.leavesGone(cm, g, before, after)
 	if !after.Active {
 		if g.See == nil {
@@ -910,7 +928,11 @@ func (e *Engine) ccommit(ctx context.Context, cm *Community, g *CGroup, o ccommi
 		}
 		return &wire.Error{Code: r.Error, Msg: "the community server refused the commit"}
 	}
-	if _, err := e.checkReceiptFrom(ctx, cm.Server, *r.Receipt, gid, res.Epoch, res.Commit); err != nil {
+	rc, err := e.checkReceiptFrom(ctx, cm.Server, *r.Receipt, gid, res.Epoch, res.Commit)
+	if err == nil {
+		g.LastReceiptTS = rc.TS
+	}
+	if err != nil {
 		clear()
 		e.stopCommunity(cm, "the community server's receipt didn't check out")
 		return err
