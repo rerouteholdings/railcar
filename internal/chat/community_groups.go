@@ -141,7 +141,7 @@ type cjudged struct {
 	// backward is set for a commit that named an earlier community chain
 	// entry, in a members group that doesn't require members_rules yet,
 	// so it's taken with a line (§16.2).
-	backward bool
+	backward  bool
 	committer string
 }
 
