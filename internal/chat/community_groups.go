@@ -901,7 +901,7 @@ func (e *Engine) bindHead(ctx context.Context, cm *Community) error {
 	}
 	var lastErr error
 	for range 3 {
-		err := e.ccommit(ctx, cm, g, ccommitOpts{head: c.Head(), pending: e.hasPending(g)})
+		err := e.ccommit(ctx, cm, g, ccommitOpts{head: e.headToName(ctx, cm, c), pending: e.hasPending(g)})
 		if err == nil || !wire.IsCode(err, wire.CodeStaleEpoch) {
 			return err
 		}
@@ -923,4 +923,91 @@ func allList(st *mls.State, t uint16) bool {
 		}
 	}
 	return len(st.Members) > 0
+}
+
+// headToName is the community chain entry this device may name in a
+// commit's community_head: the newest one, unless an entry after the head
+// the members group names now was signed by a device key that the
+// signer's fresh chain had removed by an earlier entry. Then it's the entry
+// before the first such one, since a member is never the first to name it
+// (§16.2.2). It warns the owner and administrators, and alerts the user
+// when the removed device was their own. The caller holds e.mu.
+func (e *Engine) headToName(ctx context.Context, cm *Community, c *community.Chain) []byte {
+	from := 0
+	if g := cm.Groups[cm.MembersGroup]; g != nil {
+		if st, err := e.dev.mls.Group(mustB64(g.ID)).State(); err == nil {
+			if h, ok := communityHead(st.Extensions); ok {
+				if seq, ok := c.Find(h); ok {
+					from = int(seq) + 1
+				}
+			}
+		}
+	}
+	fresh := map[string]*identity.Chain{}
+	for i := from; i < c.Len(); i++ {
+		en, err := community.ParseEntry(c.Entries[i])
+		if err != nil {
+			continue
+		}
+		ic := fresh[en.By]
+		if ic == nil {
+			if ic, err = e.identityChain(ctx, cm, en.By, true); err != nil {
+				continue // can't tell: judged as before
+			}
+			fresh[en.By] = ic
+		}
+		if at, removed := removedAt(ic, c.Entries[i].K); removed && at < en.TS {
+			e.removedSigner(cm, en.By, uint64(i))
+			if i == 0 {
+				return nil
+			}
+			h := c.Hashes[i-1]
+			return h[:]
+		}
+	}
+	return c.Head()
+}
+
+// removedAt finds when an identity's chain removed a device key, by the
+// removing entry's ts.
+func removedAt(ic *identity.Chain, key []byte) (int64, bool) {
+	if ic.State.IsDevice(key) {
+		return 0, false
+	}
+	for _, info := range ic.Info {
+		for _, op := range info.Body.Ops {
+			if op.Op == identity.OpRemoveDevice && bytes.Equal(op.Key, key) {
+				return info.TS, true
+			}
+		}
+	}
+	return 0, false
+}
+
+// removedSigner tells the user about a community chain entry signed by a
+// removed device: an alert if the device was theirs, and a warning if
+// they're the owner or hold administrate (§16.2.2).
+func (e *Engine) removedSigner(cm *Community, by string, seq uint64) {
+	ch := e.firstChannel(cm)
+	if ch == nil {
+		return
+	}
+	key := fmt.Sprintf("removed-signer %d", seq)
+	if cm.Warned == nil {
+		cm.Warned = map[string]bool{}
+	}
+	if cm.Warned[key] {
+		return
+	}
+	cm.Warned[key] = true
+	me := e.c.ID()
+	if by == me {
+		e.systemLine(ch, "A device you removed signed a change to this community. If you didn't make it, undo it, and check your devices")
+	}
+	if c, err := e.communityChain(cm); err == nil {
+		if st := c.State(); st.Owner == me || st.Can(me, community.PermAdministrate) {
+			e.systemLine(ch, "A change to this community was signed by a device "+e.nameOf(by)+" had removed. Your device won't be the first to accept it")
+		}
+	}
+	e.save()
 }

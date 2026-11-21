@@ -158,7 +158,7 @@ func (e *Engine) ApproveJoin(ctx context.Context, server, id string) error {
 	next.Used[a.Request] = a.Exp
 	// The commit binds the joiner's and the approver's histories (§16.6).
 	next.Basis = map[string]BasisRef{id: basisFor(chain), me: basisFor(e.c.Chain())}
-	o := ccommitOpts{adds: adds, welcome: []string{id}, devs: devs, ext: next, head: c.Head(), pending: e.hasPending(g)}
+	o := ccommitOpts{adds: adds, welcome: []string{id}, devs: devs, ext: next, head: e.headToName(ctx, cm, c), pending: e.hasPending(g)}
 	if err := e.ccommit(ctx, cm, g, o); err != nil {
 		return err
 	}

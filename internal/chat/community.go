@@ -94,6 +94,8 @@ type Community struct {
 	// MembersRulesKPs is set once this device's key packages at the
 	// community server list 0xF0A5 (§16.2).
 	MembersRulesKPs bool `json:"members_rules_kps,omitempty"`
+	// Warned keeps warnings this device has shown once.
+	Warned map[string]bool `json:"warned,omitempty"`
 }
 
 // CGroup is one of a community's MLS groups.
