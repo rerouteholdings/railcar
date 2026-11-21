@@ -456,6 +456,9 @@ type Message struct {
 	ReplyTo string
 	// Edited is true when the sender has changed the text since sending.
 	Edited bool
+	// ReplacedKey marks history signed with a message key that a newer one
+	// replaced: it isn't shown as verified (§3.2.3).
+	ReplacedKey bool
 	// Deleted is true when the sender deleted the message for everyone.
 	Deleted bool
 	// Seq is a channel message's sequence number (§16.5).

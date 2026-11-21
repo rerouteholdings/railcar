@@ -428,7 +428,7 @@ func (b *Backend) uiChat(eng *chat.Engine, c chat.Chat) ui.Chat {
 func uiMessage(eng *chat.Engine, me, chatID string, m chat.Message) ui.Message {
 	out := ui.Message{
 		ID: m.ID, Chat: chatID, Sender: member(eng, m.From), Mine: m.From == me,
-		Sent: time.Unix(m.TS, 0), Text: m.Body, ReplyTo: m.Reply, Edited: m.Edited,
+		Sent: time.Unix(m.TS, 0), Text: m.Body, ReplyTo: m.Reply, Edited: m.Edited, ReplacedKey: m.ReplacedKey,
 		Deleted: m.Deleted, Unsupported: m.Unsupported != "", Read: len(m.ReadBy) > 0, System: m.System, Seq: m.Seq, Mention: m.Mentioned || m.Everyone,
 	}
 	for _, f := range m.Files {

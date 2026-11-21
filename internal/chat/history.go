@@ -74,6 +74,33 @@ type imported struct {
 	Key  string      `json:"key"`
 	Msg  wire.Signed `json:"msg"`
 	MK   wire.Signed `json:"mk"` // the msg-key that signed it
+	// Replaced is set when the export holds a newer msg-key for the same
+	// device and composite key (§3.2.3).
+	Replaced bool `json:"replaced,omitempty"`
+}
+
+// replacedKeys marks the items signed with a message key that a msg-key
+// with a higher n, for the same identity and device and certified by the
+// same composite key, replaced (§3.2.3).
+func replacedKeys(items []imported, keys map[string]wire.Signed) {
+	newest := map[string]uint64{}
+	of := func(s wire.Signed) (string, uint64, bool) {
+		var b identity.MsgKeyBody
+		if s.Body(&b) != nil {
+			return "", 0, false
+		}
+		return b.ID + "\x00" + string(b.Dev) + "\x00" + string(s.K), b.N, true
+	}
+	for _, s := range keys {
+		if k, n, ok := of(s); ok && n > newest[k] {
+			newest[k] = n
+		}
+	}
+	for i := range items {
+		if k, n, ok := of(items[i].MK); ok && n < newest[k] {
+			items[i].Replaced = true
+		}
+	}
 }
 
 func histRecord(chat string) string { return recHistLog + recordID(chat) }
@@ -354,6 +381,7 @@ func (e *Engine) readExport(ctx context.Context, data []byte) []imported {
 	if dropped > 0 {
 		e.log.Info("chat: dropped messages from imported history", "count", dropped)
 	}
+	replacedKeys(out, keys)
 	e.log.Debug("chat: imported history", "messages", len(out), "chats", len(kinds), "keys", len(keys))
 	return out
 }
@@ -439,6 +467,7 @@ func (e *Engine) applyImported(ctx context.Context, ch *Chat) {
 		return
 	}
 	unread, asker := ch.Unread, ch.ReceiptAsker
+	replaced := map[string]bool{}
 	for _, it := range pending {
 		if !mine(it) {
 			continue
@@ -457,11 +486,24 @@ func (e *Engine) applyImported(ctx context.Context, ch *Chat) {
 			e.log.Debug("chat: an imported message", "err", err)
 			continue
 		}
+		if it.Replaced {
+			var c struct {
+				ID string `json:"id"`
+			}
+			if wire.Unmarshal(am.C, &c) == nil && c.ID != "" {
+				replaced[c.ID] = true
+			}
+		}
 		e.keepHistory(ch, it.Msg.Canonical(), it.MK.Canonical())
 	}
 	ch.Unread, ch.ReceiptAsker = unread, asker
 	if msgs, err := e.messages(ch.ID); err == nil {
 		slices.SortStableFunc(msgs, func(a, b Message) int { return int(a.TS - b.TS) })
+		for i := range msgs {
+			if replaced[msgs[i].ID] {
+				msgs[i].ReplacedKey = true
+			}
+		}
 		saveMessages(e.profile(), recordID(ch.ID), msgs)
 	}
 	pending = slices.DeleteFunc(pending, mine)

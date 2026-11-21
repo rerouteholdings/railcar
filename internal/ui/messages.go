@@ -80,6 +80,9 @@ func messageBody(t *theme, m Message, width int) string {
 	if m.Edited {
 		marks = append(marks, t.dim.Render("(edited)"))
 	}
+	if m.ReplacedKey {
+		marks = append(marks, t.warning.Render("Signed with a replaced key, so not verified"))
+	}
 	if m.Read {
 		marks = append(marks, t.dim.Render("Read"))
 	}

@@ -165,7 +165,10 @@ type Message struct {
 	Body     string `json:"body"`
 	Reply    string `json:"reply,omitempty"`
 	Edited   bool   `json:"edited,omitempty"`
-	Deleted  bool   `json:"deleted,omitempty"`
+	// ReplacedKey is set on imported history signed with a message key a
+	// newer one replaced, which shows it as not verified (§3.2.3).
+	ReplacedKey bool `json:"replaced_key,omitempty"`
+	Deleted     bool `json:"deleted,omitempty"`
 	// Unsupported is the content type of a message this client can't show
 	// (§12).
 	Unsupported string `json:"unsupported,omitempty"`
