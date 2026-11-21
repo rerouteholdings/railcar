@@ -20,6 +20,7 @@ func TestServerDoc(t *testing.T) {
 	}
 	fetches := 0
 	var base string
+	nbf := time.Now().Unix() - 86400
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != ServerPath {
 			http.NotFound(w, r)
@@ -30,9 +31,9 @@ func TestServerDoc(t *testing.T) {
 		fmt.Fprintf(w, `{"name":"chat.example.com","roles":["home","future"],"apis":[
 			{"v":1,"client":"%[1]s/v1/client/","s2s":"%[1]s/v1/s2s/"},
 			{"v":2,"client":"%[1]s/v2/client/","s2s":"%[1]s/v2/s2s/"}],
-			"keys":[{"kid":"old","pub":"%[2]s","nbf":0,"exp":9999999999},
-			        {"kid":"k1","pub":"%[3]s","nbf":0,"exp":9999999999}],
-			"registration":"invite","unknown":true}`, base, wire.EncodeB64(k.EdPublic()), wire.EncodeB64(k.Public()))
+			"keys":[{"kid":"old","pub":"%[2]s","nbf":%[4]d,"exp":%[5]d},
+			        {"kid":"k1","pub":"%[3]s","nbf":%[4]d,"exp":%[5]d}],
+			"registration":"invite","unknown":true}`, base, wire.EncodeB64(k.EdPublic()), wire.EncodeB64(k.Public()), nbf, nbf+300*86400)
 	}))
 	defer srv.Close()
 	base = srv.URL
