@@ -248,6 +248,22 @@ func TestE2ERailcarCalls(t *testing.T) {
 	if n := kat.e.CallIn(g.ID); n != 2 {
 		t.Errorf("Kat sees %d devices in the call, not 2", n)
 	}
+
+	// Kat rejoins the same call in the same epoch: her device commits a
+	// new epoch first, so no SFrame key and CTR repeats (§15.2).
+	kg, _ := kat.e.Chat(g.ID)
+	waitFor(t, "the call to clear for Kat", func() bool { return phase(kat.e) == "" })
+	if err := kat.e.AnswerCall(ctx, g.ID); err != nil {
+		t.Fatal(err)
+	}
+	if after, _ := kat.e.Chat(g.ID); after.Epoch <= kg.Epoch {
+		t.Errorf("the epoch stayed at %d on rejoining", after.Epoch)
+	}
+	waitFor(t, "Kat back in the mesh", func() bool { return connected(kat.e, 2)() })
+	time.Sleep(time.Second)
+	hears(t, "ravi, after Kat rejoined", ravi.tone.record(2*time.Second), []float64{440, 880}, 660)
+	kat.e.HangUp(ctx)
+	waitFor(t, "the others to see Kat go again", func() bool { return connected(ravi.e, 1)() })
 	ravi.e.HangUp(ctx)
 	waitFor(t, "the call to end for Lee", func() bool { p := phase(lee.e); return p == CallEnded || p == "" })
 }

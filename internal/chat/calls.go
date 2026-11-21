@@ -14,6 +14,7 @@ import (
 
 	"github.com/rerouteholdings/railcar/internal/media/audio"
 	"github.com/rerouteholdings/railcar/internal/media/rtc"
+	"github.com/rerouteholdings/railcar/internal/mls"
 	"github.com/rerouteholdings/railcar/internal/tieroute/client"
 	"github.com/rerouteholdings/railcar/internal/tieroute/sframe"
 	"github.com/rerouteholdings/railcar/internal/tieroute/wire"
@@ -514,6 +515,11 @@ func (cs *calls) newCall(chat string, id []byte, group bool) (*call, error) {
 	c := &call{chat: chat, id: id, group: group, devs: map[string]*callDev{}, audio: aio, api: api, rtcOpts: o, ctx: cctx, cancel: ccancel}
 	c.relay.set(relay)
 	c.keys = &callKeys{e: e, chat: chat, call: id, old: map[uint64]oldKey{}}
+	if err := e.freshCallEpoch(chat, id); err != nil {
+		ccancel()
+		aio.Close()
+		return nil, err
+	}
 	if err := c.keys.refresh(); err != nil {
 		ccancel()
 		aio.Close()
@@ -1269,6 +1275,10 @@ func (k *callKeys) refresh() error {
 	var base []byte
 	if err == nil && (!k.loaded || st.Epoch != k.epoch) {
 		base, err = g.ExportSecret(sframe.ExporterLabel, k.call, 16)
+		if err == nil {
+			// Recorded before the first frame under this key (§15.2).
+			err = e.noteCallEpoch(k.call, st.Epoch)
+		}
 	}
 	e.mu.Unlock()
 	if err != nil {
@@ -1369,4 +1379,66 @@ func (k *knownCall) groupCall(e *Engine, chat string) bool {
 	defer e.mu.Unlock()
 	ch, ok := e.st.Chats[chat]
 	return ok && ch.Kind == KindGroup
+}
+
+// callEpochsFor is how long a record of the epochs this device sent in, in
+// a call, is kept.
+const callEpochsFor = 24 * time.Hour
+
+// noteCallEpoch records, in the profile, that this device sends in a call
+// in an epoch, before it does (§15.2). The caller holds e.mu.
+func (e *Engine) noteCallEpoch(call []byte, epoch uint64) error {
+	if e.st.CallEpochs == nil {
+		e.st.CallEpochs = map[string]*callEpochs{}
+	}
+	now := time.Now().Unix()
+	for id, r := range e.st.CallEpochs {
+		if now-r.At > int64(callEpochsFor/time.Second) {
+			delete(e.st.CallEpochs, id)
+		}
+	}
+	id := wire.EncodeB64(call)
+	r := e.st.CallEpochs[id]
+	if r == nil {
+		r = &callEpochs{}
+		e.st.CallEpochs[id] = r
+	}
+	r.At = now
+	if !slices.Contains(r.Epochs, epoch) {
+		r.Epochs = append(r.Epochs, epoch)
+	}
+	return e.save()
+}
+
+// freshCallEpoch makes sure this device hasn't sent in a call in the chat's
+// current epoch: if it has, as after a crash or a hangup and a rejoin, it
+// commits to the chat's group first, with an update path, so its keys and
+// CTRs are new (§15.2).
+func (e *Engine) freshCallEpoch(chat string, call []byte) error {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	for attempt := 0; attempt < 3; attempt++ {
+		ch := e.st.Chats[chat]
+		if ch == nil {
+			return errors.New("chat: no such chat")
+		}
+		r := e.st.CallEpochs[wire.EncodeB64(call)]
+		if r == nil || !slices.Contains(r.Epochs, ch.Epoch) {
+			return nil
+		}
+		g := e.dev.mls.Group(mustB64(chat))
+		err := e.commit(ctx, ch, g, mls.CommitOptions{UpdatePath: true}, nil, ch.Members, nil)
+		if err == nil {
+			e.save()
+			return nil
+		}
+		if !wire.IsCode(err, wire.CodeStaleEpoch) {
+			return fmt.Errorf("chat: a new epoch before rejoining the call: %w", err)
+		}
+		e.fetchMissed(ctx, ch)
+		e.drain(ctx, ch)
+	}
+	return errors.New("chat: the chat kept changing while rejoining the call; try again")
 }

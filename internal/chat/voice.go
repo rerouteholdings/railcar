@@ -113,6 +113,11 @@ type visit struct {
 	deafened     bool
 	ended        string
 	relay        relayLease
+	// sender is the SFrame sender for the visit's current generation. A
+	// repeated voice-joined keeps it, so no KID's CTR starts again
+	// (§16.4).
+	sender    *sframe.Sender
+	senderGen uint8
 }
 
 // voice is the engine's voice channel state. Like calls, one goroutine
@@ -317,6 +322,7 @@ func (v *voice) join(chat string) error {
 	c.base = make([]byte, 32)
 	rand.Read(c.base)
 	c.visit, c.gen = randVisit(), 0
+	c.sender = nil // a new visit, with a new base key
 	media, err := rtc.NewMedia(c.audio.Source, c.audio.Mix, voiceRing{v, chat})
 	if err != nil {
 		return err
@@ -680,11 +686,14 @@ func (v *voice) handleFrame(server, t string, channel uint64, vis uint32, sdp, d
 			v.fail(c, "Your voice key couldn't be sent: "+err.Error())
 			return
 		}
-		s, err := sframe.NewSender(c.base, sframe.VoiceKID(c.visit, c.gen, sframe.StreamVoice))
-		if err != nil {
-			return
+		if c.sender == nil || c.senderGen != c.gen {
+			s, err := sframe.NewSender(c.base, sframe.VoiceKID(c.visit, c.gen, sframe.StreamVoice))
+			if err != nil {
+				return
+			}
+			c.sender, c.senderGen = s, c.gen
 		}
-		c.media.SetSender(s)
+		c.media.SetSender(c.sender)
 		if c.media.Muted() || c.deafened {
 			v.sendMute(c)
 		}
@@ -904,6 +913,7 @@ func (v *voice) rekey(server, gid string) {
 	if err != nil {
 		return
 	}
+	c.sender, c.senderGen = s, c.gen
 	c.media.SetSender(s)
 	v.e.log.Debug("chat: replaced the voice key", "generation", c.gen)
 }

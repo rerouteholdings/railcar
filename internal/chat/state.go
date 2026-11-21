@@ -235,6 +235,16 @@ type state struct {
 	// LastRejoin is when this device last came back as a new device
 	// (§11.9).
 	LastRejoin time.Time `json:"last_rejoin,omitzero"`
+	// CallEpochs records the epochs this device has sent in for each
+	// call, by call ID, so it never sends under a used key again (§15.2).
+	CallEpochs map[string]*callEpochs `json:"call_epochs,omitempty"`
+}
+
+// callEpochs are the epochs a device sent in for one call, and when it
+// last did.
+type callEpochs struct {
+	Epochs []uint64 `json:"epochs"`
+	At     int64    `json:"at"`
 }
 
 func loadState(p *store.Profile) (*state, error) {
