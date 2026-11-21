@@ -124,6 +124,24 @@ func (e *Engine) rotateGroupKeys(ctx context.Context, cm *Community) {
 	}
 }
 
+// rotateHistoryKeys gives each text channel with history that a group
+// carries a new history key, and sends the group its keys: what the
+// device that commits a member's voluntary leave does (§16.5). The
+// community metadata key stays. The caller holds e.mu.
+func (e *Engine) rotateHistoryKeys(ctx context.Context, cm *Community, g *CGroup) {
+	c, err := e.communityChain(cm)
+	if err != nil {
+		return
+	}
+	for _, ch := range c.State().Channels {
+		if ch.Kind == "text" && ch.History && e.groupFor(cm, ch) == g {
+			addKey(&cm.HistoryKeys, ch.ID, randKey())
+		}
+	}
+	e.save()
+	e.sendKeys(ctx, cm, g)
+}
+
 // errNothingToSeal ends a rotation with no names to re-seal: the new key
 // still goes to the members.
 var errNothingToSeal = errorString("chat: nothing to re-seal")

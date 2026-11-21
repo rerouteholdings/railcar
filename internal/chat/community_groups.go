@@ -621,10 +621,14 @@ func (e *Engine) cprocessProposal(ctx context.Context, cm *Community, g *CGroup,
 		return nil
 	}
 	ok := p.Proposal != nil && p.Proposal.Kind == "remove" && p.Proposal.Removed != nil && p.Sender.Kind == "member"
+	leaver := ""
 	if ok {
 		from, _ := st.Member(p.Sender.Index)
 		target, _ := st.Member(*p.Proposal.Removed)
 		ok = from != nil && target != nil && bytes.Equal(credID(from.Identity), credID(target.Identity))
+		if ok {
+			leaver, _, _ = parseCredential(target.Identity)
+		}
 	}
 	if !ok {
 		if p.Proposal != nil {
@@ -639,6 +643,10 @@ func (e *Engine) cprocessProposal(ctx context.Context, cm *Community, g *CGroup,
 	if cm.Stopped == "" {
 		if err := e.ccommit(ctx, cm, g, ccommitOpts{pending: true}); err != nil {
 			e.log.Info("chat: committing a leave in a community group", "err", err)
+		} else if leaver != "" && !slices.Contains(g.Members, leaver) {
+			// Its last leaf is gone: new history keys for what the group
+			// carries, as after a removal (§16.5).
+			e.rotateHistoryKeys(ctx, cm, g)
 		}
 	}
 	return nil
