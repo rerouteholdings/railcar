@@ -683,6 +683,49 @@ func (e *Engine) communityWelcome(ctx context.Context, cm *Community, d *client.
 			return refuse(err)
 		}
 	}
+	// The sender: a current device of the identity that delivered it
+	// (§7.1, Welcomes), with the group's extensions as for any community
+	// Welcome.
+	sender, ok := st.Member(res.SenderLeafIndex)
+	if !ok {
+		return refuse(errors.New("chat: a community Welcome from a leaf that isn't there"))
+	}
+	sid, _, err := e.checkLeaf(&sender.LeafInfo, get, leafCurrent)
+	if err != nil {
+		var r retryable
+		if errors.As(err, &r) {
+			mg.Delete()
+			e.dev.Revert()
+			return err
+		}
+		fresh := func(id string) (*identity.Chain, error) { return e.identityChain(ctx, cm, id, true) }
+		if sid, _, err = e.checkLeaf(&sender.LeafInfo, fresh, leafCurrent); err != nil {
+			return refuse(fmt.Errorf("chat: the community Welcome's sender isn't a current device: %w", err))
+		}
+	}
+	if sid != d.From {
+		return refuse(errors.New("chat: the community Welcome's sender isn't who delivered it"))
+	}
+	if data, ok := st.Extension(ExtGroup); !ok {
+		return refuse(errors.New("chat: a community group without tieroute_group"))
+	} else if _, err := ParseGroupExt(data); err != nil {
+		return refuse(err)
+	}
+	if d.Group == cm.MembersGroup {
+		head, ok := communityHead(st.Extensions)
+		if !ok {
+			return refuse(errors.New("chat: a members group without community_head"))
+		}
+		if _, _, err := e.stateAtHead(ctx, cm, head); err != nil {
+			var r retryable
+			if errors.As(err, &r) {
+				mg.Delete()
+				e.dev.Revert()
+				return err
+			}
+			return refuse(fmt.Errorf("chat: the members group's community_head: %w", err))
+		}
+	}
 	// Which group: the members group, or the one carrying a see list.
 	var see []uint64
 	if d.Group != cm.MembersGroup {

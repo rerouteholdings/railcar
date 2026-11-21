@@ -35,3 +35,26 @@ func TestNewerBound(t *testing.T) {
 		t.Fatalf("kept %v", got)
 	}
 }
+
+// TestWelcomeFromMember checks who may add a device to a chat it waits
+// for (§7.1): its own identity or a member it knows of, or, with no list,
+// anyone the usual rule takes.
+func TestWelcomeFromMember(t *testing.T) {
+	members := []string{"me", "kat"}
+	for _, c := range []struct {
+		from string
+		list []string
+		ok   bool
+	}{
+		{"me", members, true},
+		{"kat", members, true},
+		{"lee", members, false},
+		{"lee", nil, true},
+		{"me", []string{}, true},
+		{"kat", []string{}, false},
+	} {
+		if got := welcomeFromMember("me", c.from, c.list); got != c.ok {
+			t.Errorf("from %s with %v: %v", c.from, c.list, got)
+		}
+	}
+}

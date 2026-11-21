@@ -432,6 +432,11 @@ func (e *Engine) welcome(ctx context.Context, d *client.Delivery) error {
 		}
 		ids[id] = true
 	}
+	// A chat this device waits for takes a Welcome only from its own
+	// identity or someone who was in it (§7.1, Welcomes).
+	if list, waiting := e.waitingMembers(d.Group, old); waiting && !welcomeFromMember(me, d.From, list) {
+		return refuse(fmt.Errorf("chat: a Welcome into a chat this device waits for, from %s, who wasn't in it", d.From))
+	}
 	for id := range ids {
 		if _, ok := ext.Since[id]; !ok {
 			return refuse(fmt.Errorf("chat: tieroute_group's since leaves out %s", id))
@@ -565,4 +570,26 @@ func (e *Engine) chainForBasis(ctx context.Context, id string, b BasisRef) []wir
 // for a chat a device is coming back to (§10.3, §11.9).
 func welcomeFrom(me, from string, c *Contact) bool {
 	return from == me || c != nil && (c.State == StateContact || c.State == StatePendingOut)
+}
+
+// waitingMembers reports whether this device waits for a chat: one its
+// link bundle lists, or one it's coming back to as a new device (§7.2,
+// §11.9). It gives the chat's members as the device knows them, or nil
+// when it doesn't know them. The caller holds e.mu.
+func (e *Engine) waitingMembers(gid string, old *Chat) ([]string, bool) {
+	if old != nil && old.Rejoining {
+		return old.Members, true
+	}
+	if slices.Contains(e.st.Expected, gid) {
+		return e.st.ExpectedMembers[gid], true
+	}
+	return nil, false
+}
+
+// welcomeFromMember reports whether a Welcome into a chat a device waits
+// for may come from from: its own identity, or a member on the list. With
+// no list, as from a bundle written before members, the usual rule for
+// Welcomes decides (§7.1).
+func welcomeFromMember(me, from string, members []string) bool {
+	return from == me || members == nil || slices.Contains(members, from)
 }
