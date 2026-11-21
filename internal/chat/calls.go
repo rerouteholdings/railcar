@@ -165,7 +165,13 @@ func (e *Engine) CallsOff() bool { return e.callsOff() }
 // server-reflexive candidates, so nothing outside the relay learns the
 // device's address.
 func (e *Engine) mediaOptions(o CallOptions, relayOnly bool) rtc.Options {
-	return rtc.Options{Loopback: o.Loopback && !e.c.Proxied(), RelayOnly: relayOnly || e.c.Proxied()}
+	ro := rtc.Options{Loopback: o.Loopback && !e.c.Proxied(), RelayOnly: relayOnly || e.c.Proxied()}
+	if e.c.Proxied() {
+		// The relay's hostname goes over DNS over HTTPS, through the
+		// proxy, so the machine makes no DNS lookups of its own.
+		ro.Resolve = e.c.LookupIP
+	}
+	return ro
 }
 
 // openAudio opens the microphone and speakers the user chose, or the

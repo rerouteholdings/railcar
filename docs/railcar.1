@@ -42,8 +42,8 @@ channels are off with a proxy, since they're UDP, which a proxy doesn't carry.
 .TP
 .B \-\-proxy\-calls
 With a proxy, allow calls and voice channels anyway, only through your
-homeserver's relay. The relay, and the DNS server that looks up its name, see
-your real IP address.
+homeserver's relay. The relay sees your real IP address. Its name is still
+looked up through the proxy.
 .TP
 .B \-\-proxy\-from\-env
 Without \fB\-\-proxy\fR, take the proxy from \fBALL_PROXY\fR,

@@ -18,7 +18,7 @@ This page describes `internal/tieroute`, the part of Railcar that speaks the Tie
 
 ## The client API
 
-`client.Options.Proxy`, from `internal/proxy`, sends every connection the client and its community connections make through a SOCKS5 or HTTP CONNECT proxy: the API, the live streams, files, server documents, handle lookups, and relay credentials. The proxy resolves hostnames, discovery makes no DNS lookups of its own, and a proxy that can't be reached fails the request, with no direct connection instead. Without a proxy, the client connects directly, and never reads the environment's proxy variables.
+`client.Options.Proxy`, from `internal/proxy`, sends every connection the client and its community connections make through a SOCKS5 or HTTP CONNECT proxy: the API, the live streams, files, server documents, handle lookups, and relay credentials. The proxy resolves hostnames, handle TXT records and call relays' names go over DNS over HTTPS to Cloudflare's resolver through the proxy (`proxy.Config.LookupTXT` and `LookupIP`), so nothing makes DNS lookups of its own, and a proxy that can't be reached fails the request, with no direct connection instead. Without a proxy, the client connects directly, and never reads the environment's proxy variables.
 
 Sign up in two steps, so the interface can show the recovery words and ask for some of them back before anything is registered (§6.1):
 

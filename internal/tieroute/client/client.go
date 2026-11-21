@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net"
 	"net/http"
 	"sync"
 	"time"
@@ -53,7 +54,23 @@ func (o Options) httpClient() *http.Client {
 // resolver is a discovery resolver that makes no DNS lookups of its own
 // while a proxy is set.
 func (o Options) resolver() *discovery.Resolver {
-	return &discovery.Resolver{HTTP: o.httpClient(), Origins: o.Origins, NoDNS: o.Proxy.Set()}
+	r := &discovery.Resolver{HTTP: o.httpClient(), Origins: o.Origins, NoDNS: o.Proxy.Set()}
+	if o.Proxy.Set() {
+		// Through a proxy, DNS goes over HTTPS, through the proxy too.
+		r.TXT = o.Proxy.LookupTXT
+	}
+	return r
+}
+
+// LookupIP looks up a host's addresses for a connection that doesn't go
+// through the proxy, such as to a call relay: over DNS over HTTPS through
+// the proxy while one is set, so the machine makes no DNS lookups of its
+// own, and with the system's resolver otherwise.
+func (c *Client) LookupIP(ctx context.Context, host string) ([]net.IP, error) {
+	if c.opts.Proxy.Set() {
+		return c.opts.Proxy.LookupIP(ctx, host)
+	}
+	return net.DefaultResolver.LookupIP(ctx, "ip", host)
 }
 
 // Proxied reports whether connections go through a proxy.

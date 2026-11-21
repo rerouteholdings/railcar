@@ -95,12 +95,16 @@ func (r *Resolver) LookupHandle(ctx context.Context, handle string) (HandleRecor
 			return rec, rec.check()
 		}
 	}
-	if r.NoDNS {
+	lookup := net.DefaultResolver.LookupTXT
+	switch {
+	case r.TXT != nil:
+		lookup = r.TXT
+	case r.NoDNS:
 		return HandleRecord{}, fmt.Errorf("%w: no HTTPS document, and no DNS lookups through a proxy", ErrNoHandle)
 	}
-	txts, err := net.DefaultResolver.LookupTXT(ctx, "_tieroute."+handle)
+	txts, err := lookup(ctx, "_tieroute."+handle)
 	if err != nil {
-		return HandleRecord{}, fmt.Errorf("%w: %v", ErrNoHandle, err)
+		return HandleRecord{}, fmt.Errorf("%w: %w", ErrNoHandle, err)
 	}
 	// Go returns each record's strings already joined.
 	recs := make([][]string, len(txts))

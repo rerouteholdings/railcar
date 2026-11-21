@@ -47,9 +47,9 @@ Options:
                          connect at all. Calls and voice channels are off with
                          a proxy, since they're UDP, which a proxy doesn't carry.
   --proxy-calls          With a proxy, allow calls and voice channels anyway,
-                         only through your homeserver's relay. The relay, and
-                         the DNS server that looks up its name, see your real
-                         IP address.
+                         only through your homeserver's relay. The relay sees
+                         your real IP address. Its name is still looked up
+                         through the proxy.
   --proxy-from-env       Without --proxy, take the proxy from ALL_PROXY,
                          HTTPS_PROXY, or HTTP_PROXY. Railcar ignores them
                          otherwise.

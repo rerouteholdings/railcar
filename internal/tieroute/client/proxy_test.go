@@ -32,7 +32,16 @@ func TestProxyOptions(t *testing.T) {
 	if !errors.As(err, &u) {
 		t.Errorf("a server document through a dead proxy: %v", err)
 	}
-	if _, err := o.resolver().LookupHandle(context.Background(), "kat.example.com"); err == nil {
-		t.Error("a handle lookup through a dead proxy worked")
+	if o.resolver().TXT == nil || (Options{}).resolver().TXT != nil {
+		t.Error("DNS over HTTPS doesn't follow the proxy")
+	}
+	// The DNS fallback goes over HTTPS through the proxy too, so it fails
+	// at the dead proxy rather than asking the system's resolver.
+	_, err = o.resolver().LookupHandle(context.Background(), "kat.example.com")
+	if !errors.As(err, &u) {
+		t.Errorf("a handle lookup through a dead proxy: %v", err)
+	}
+	if _, err := (&Client{opts: o}).LookupIP(context.Background(), "turn.example.net"); !errors.As(err, &u) {
+		t.Errorf("a relay lookup through a dead proxy: %v", err)
 	}
 }

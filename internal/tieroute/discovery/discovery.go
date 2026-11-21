@@ -109,6 +109,9 @@ type Resolver struct {
 	// NoDNS skips the DNS lookups the resolver would make itself, for a
 	// client whose connections go through a proxy that resolves names.
 	NoDNS bool
+	// TXT, when set, looks TXT records up in place of the system's
+	// resolver, such as over DNS over HTTPS through a proxy.
+	TXT func(ctx context.Context, name string) ([]string, error)
 	// Origins maps server names to the origins to reach them at, such as
 	// "a.test" to "http://127.0.0.1:18471". It's for local test networks,
 	// which are an implementation feature, not protocol (§5.1). A server

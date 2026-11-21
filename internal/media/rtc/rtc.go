@@ -32,6 +32,9 @@ type Options struct {
 	RelayOnly bool
 	// Loopback adds loopback candidates, for tests on one machine.
 	Loopback bool
+	// Resolve, when set, looks up the relays' hostnames, so WebRTC makes
+	// no DNS lookups of its own, as behind a proxy.
+	Resolve Resolver
 }
 
 // NewAPI returns a pion API with Opus, and H.264 so cast video sections
@@ -59,6 +62,13 @@ func NewAPI(o Options) (*webrtc.API, error) {
 	s := webrtc.SettingEngine{}
 	s.SetIncludeLoopbackCandidate(o.Loopback)
 	s.SetICEMulticastDNSMode(ice.MulticastDNSModeDisabled)
+	if o.Resolve != nil {
+		n, err := newLookupNet(o.Resolve)
+		if err != nil {
+			return nil, err
+		}
+		s.SetNet(n)
+	}
 	return webrtc.NewAPI(webrtc.WithMediaEngine(m), webrtc.WithSettingEngine(s)), nil
 }
 
