@@ -519,6 +519,7 @@ func (e *Engine) cprocessCommit(ctx context.Context, cm *Community, g *CGroup, b
 		if errors.As(err, &inv) {
 			e.log.Info("chat: refused a community commit", "err", err)
 			e.stopCommunity(cm, "a member's change didn't follow the community's rules: "+err.Error())
+			e.refused(cm, g, b, before, p)
 			return nil
 		}
 		g.Pending = true

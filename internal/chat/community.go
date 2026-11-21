@@ -96,6 +96,9 @@ type Community struct {
 	MembersRulesKPs bool `json:"members_rules_kps,omitempty"`
 	// Warned keeps warnings this device has shown once.
 	Warned map[string]bool `json:"warned,omitempty"`
+	// Refused is the commit that stopped the community, until an undo
+	// for it arrives (§16.5).
+	Refused *RefusedCommit `json:"refused,omitempty"`
 }
 
 // CGroup is one of a community's MLS groups.
@@ -506,6 +509,9 @@ func (e *Engine) syncCommunities(ctx context.Context) error {
 			continue
 		}
 		cursor := cm.Cursor
+		if cm.Refused != nil {
+			e.checkUndos(ctx, cm)
+		}
 		e.mu.Unlock()
 		conn := e.c.Community(server)
 		for range 100 {
@@ -594,6 +600,13 @@ func (e *Engine) processCommunity(ctx context.Context, cm *Community, it *client
 			e.declinedJoin(cm)
 		case "join-request":
 			e.joinRequested(ctx, cm, n)
+		case "commit-undo":
+			var u struct {
+				Undo *wire.Signed `json:"undo"`
+			}
+			if wire.Unmarshal(n.Raw, &u) == nil && u.Undo != nil {
+				return e.takeUndo(ctx, cm, *u.Undo)
+			}
 		}
 		return nil
 	}

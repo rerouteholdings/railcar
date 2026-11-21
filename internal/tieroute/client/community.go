@@ -537,6 +537,24 @@ func (cm *Community) Commits(ctx context.Context, group []byte, after uint64) ([
 	return res.Items, err
 }
 
+// Undos fetches the commit-undos the community server holds for a group's
+// epochs after after (GET groups/{group}/commits, undos).
+func (cm *Community) Undos(ctx context.Context, group []byte, after uint64) ([]wire.Signed, error) {
+	var res struct {
+		Undos []wire.Signed `json:"undos"`
+	}
+	q := url.Values{"after": {strconv.FormatUint(after, 10)}}
+	err := cm.authed(ctx, http.MethodGet, "groups/"+wire.EncodeB64(group)+"/commits", q, nil, &res)
+	return res.Undos, err
+}
+
+// Undo asks the community server to undo a commit every member refused,
+// with a signed commit-undo (POST groups/undo, §16.5). A server written
+// before undoing answers 404.
+func (cm *Community) Undo(ctx context.Context, undo wire.Signed) error {
+	return cm.authed(ctx, http.MethodPost, "groups/undo", nil, map[string]any{"undo": undo}, nil)
+}
+
 // GroupInfoRes is a group's current GroupInfo, its epoch, and its tree's
 // hash and size (GET groups/{group}/info).
 type GroupInfoRes struct {

@@ -202,6 +202,7 @@ func communityCommands(c Chat) []command {
 		argCommand("Kick someone from the community", "kick", "kick", "@handle", false),
 		argCommand("Ban someone from the community", "ban", "ban", "@handle", false),
 		argCommand("Time someone out", "timeout", "timeout", "@handle minutes", true),
+		{label: "Undo the change that stopped " + c.Community, names: []string{"undo"}, run: func(a *App) tea.Cmd { return a.main.act(a, "undo", "", "", false) }},
 		argCommand("Move the community to another community server, as its owner", "move-community", "move-community", "and the community server, then its creation code if it needs one", true),
 		{label: "Leave " + c.Community, names: []string{"leave-community"}, run: func(a *App) tea.Cmd { return a.main.act(a, "leave-community", "", "", false) }},
 	}

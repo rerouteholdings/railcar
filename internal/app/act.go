@@ -396,6 +396,14 @@ func act(ctx context.Context, eng *chat.Engine, chatID string, a ui.Action) (str
 			mins = 10
 		}
 		return fmt.Sprintf("Timed out %s for %d minutes", a.Arg, mins), eng.Timeout(ctx, server, id, time.Duration(mins)*time.Minute)
+	case "undo":
+		if err := needCommunity(); err != nil {
+			return "", err
+		}
+		if err := eng.UndoRefused(ctx, server); err != nil {
+			return "", err
+		}
+		return "The change was undone, and the community carries on", nil
 	case "move-community":
 		if err := needCommunity(); err != nil {
 			return "", err
