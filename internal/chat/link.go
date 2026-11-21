@@ -24,6 +24,12 @@ func (e *Engine) linkBundle(ctx context.Context, d *client.Delivery) error {
 	}
 	e.log.Debug("chat: the link bundle", "contacts", len(b.Contacts), "groups", len(b.Groups), "history", len(b.History), "communities", len(b.Communities))
 	e.st.Expected = slices.Clone(b.Groups)
+	e.st.ExpectedMembers = b.Members
+	if !b.Signed {
+		// During the transition, an unsigned bundle is taken, and the
+		// user is told (§7.2 step 4).
+		e.emit(Event{Kind: EventNotice, Text: "Your other device sent this one its contacts and chats without signing them. Update the app on your other device."})
+	}
 	if err := e.importContacts(ctx, b.Contacts); err != nil {
 		return err
 	}
@@ -122,6 +128,12 @@ func (e *Engine) AddDevice(ctx context.Context, d client.NewDevice, name string)
 	for _, id := range slices.Sorted(maps.Keys(e.st.Chats)) {
 		if c := e.st.Chats[id]; c.Stopped == "" && c.Kind != KindChannel && !c.Left {
 			b.Groups = append(b.Groups, id)
+			// Who's in it, so the new device can check who adds it
+			// (§7.1, §7.2).
+			if b.Members == nil {
+				b.Members = map[string][]string{}
+			}
+			b.Members[id] = slices.Clone(c.Members)
 		}
 	}
 	for _, server := range slices.Sorted(maps.Keys(e.st.Communities)) {

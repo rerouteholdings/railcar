@@ -328,6 +328,8 @@ func (b *Backend) pump(eng *chat.Engine, done chan struct{}) {
 			b.emit(ui.Typing{Chat: ev.ChatID, Who: member(eng, ev.Who), On: ev.On})
 		case chat.EventPresence:
 			b.presenceEvent(eng, ev.Who)
+		case chat.EventNotice:
+			b.emit(ui.Notice{Text: ev.Text})
 		case chat.EventCall, chat.EventVoice:
 			b.emit(ui.CallChanged{Bar: callBar(eng)})
 		}

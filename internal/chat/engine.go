@@ -57,6 +57,9 @@ const (
 	// EventVoice: this device's place in a voice channel changed
 	// (§16.4). Voice is nil once it left.
 	EventVoice
+	// EventNotice: something to tell the user that belongs to no chat,
+	// in Text.
+	EventNotice
 )
 
 // Event is something that happened.
@@ -78,6 +81,8 @@ type Event struct {
 	Rings []CallRing
 	// Voice is this device's voice channel.
 	Voice *VoiceInfo
+	// Text is a notice's text.
+	Text string
 }
 
 // Options adjust an Engine.

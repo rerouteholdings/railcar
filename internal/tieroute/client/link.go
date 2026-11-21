@@ -49,18 +49,115 @@ type LinkBundle struct {
 	AccountKey  wire.Bytes       `json:"account-key"`
 	History     []jsontext.Value `json:"history,omitempty"`
 	Communities []string         `json:"communities,omitempty"`
+	// Members names each group's member identities, as the existing
+	// device last saw them (§7.1, §7.2).
+	Members map[string][]string `json:"members,omitempty"`
+	// Sig is the existing device's link-bundle-sig (§7.2 step 4).
+	Sig *wire.Signed `json:"sig,omitempty"`
+
+	// Signed is set on a bundle this device opened whose sig checked out.
+	// An opened bundle without sig has it false.
+	Signed bool `json:"-"`
+	// unsigned is SHA-256 of JCS of the bundle as it arrived, without sig.
+	unsigned []byte
 }
 
-// SealLinkBundle encrypts a link bundle to a new device's HPKE public key:
-// the encapsulation, then the ciphertext of JCS(link-bundle), with the
-// identifier as associated data (§7.2 step 4).
-func SealLinkBundle(pub []byte, b LinkBundle) ([]byte, error) {
+// TypeLinkBundle is the type tag of a link bundle's signature (§7.2).
+const TypeLinkBundle = "link-bundle"
+
+// LinkBundleSig is the body of a link bundle's signature (§7.2 step 4).
+type LinkBundleSig struct {
+	ID     string     `json:"id"`
+	Device wire.Bytes `json:"device"` // SHA-256 of the new device's composite public key
+	HPKE   wire.Bytes `json:"hpke"`   // SHA-256 of the HPKE public key the bundle is sealed to
+	Bundle wire.Bytes `json:"bundle"` // SHA-256 of JCS(link-bundle) without sig
+}
+
+// ErrBundleSignature reports a link bundle whose signature didn't check
+// out: linking didn't finish.
+var ErrBundleSignature = errors.New("client: the link bundle's signature didn't check out, so linking didn't finish. Try again")
+
+// bundleHash is SHA-256 of JCS of a bundle's JSON with sig left out.
+func bundleHash(raw []byte) ([]byte, error) {
+	var m map[string]jsontext.Value
+	if err := wire.Unmarshal(raw, &m); err != nil {
+		return nil, err
+	}
+	delete(m, "sig")
+	j, err := wire.JCS(m)
+	if err != nil {
+		return nil, err
+	}
+	h := sha256.Sum256(j)
+	return h[:], nil
+}
+
+// SignLinkBundle signs a bundle for a new device with this device's
+// composite key, binding the new device's key and the HPKE key it's sealed
+// to (§7.2 step 4).
+func (c *Client) SignLinkBundle(b *LinkBundle, devicePub, hpkePub []byte) error {
+	b.Sig = nil
+	normalize(b)
+	raw, err := wire.JCS(b)
+	if err != nil {
+		return err
+	}
+	h, err := bundleHash(raw)
+	if err != nil {
+		return err
+	}
+	dh, hh := sha256.Sum256(devicePub), sha256.Sum256(hpkePub)
+	s, err := c.SignAsDevice(TypeLinkBundle, LinkBundleSig{ID: b.ID, Device: dh[:], HPKE: hh[:], Bundle: h})
+	if err != nil {
+		return err
+	}
+	b.Sig = &s
+	return nil
+}
+
+// CheckLinkBundle checks a bundle's signature for this device (§7.2 step
+// 4): a composite signature by a current device of the identity, other
+// than this one, over this device's key, the HPKE key it parked, and the
+// bundle as it arrived. A bundle without sig is left unsigned.
+func CheckLinkBundle(b *LinkBundle, chain *identity.Chain, devicePub, hpkePub []byte) error {
+	if b.Sig == nil {
+		b.Signed = false
+		return nil
+	}
+	s := *b.Sig
+	dev, ok := chain.State.Device(s.K)
+	if s.T != TypeLinkBundle || !ok || bytes.Equal(s.K, devicePub[len(devicePub)-32:]) {
+		return ErrBundleSignature
+	}
+	if err := sig.VerifyDevice(s, dev.Pub); err != nil {
+		return ErrBundleSignature
+	}
+	var body LinkBundleSig
+	if err := s.Body(&body); err != nil {
+		return ErrBundleSignature
+	}
+	dh, hh := sha256.Sum256(devicePub), sha256.Sum256(hpkePub)
+	if body.ID != b.ID || !bytes.Equal(body.Device, dh[:]) || !bytes.Equal(body.HPKE, hh[:]) || !bytes.Equal(body.Bundle, b.unsigned) {
+		return ErrBundleSignature
+	}
+	b.Signed = true
+	return nil
+}
+
+func normalize(b *LinkBundle) {
 	if b.Contacts == nil {
 		b.Contacts = []string{}
 	}
 	if b.Groups == nil {
 		b.Groups = []string{}
 	}
+}
+
+// SealLinkBundle encrypts a link bundle to a new device's HPKE public key:
+// the encapsulation, then the ciphertext of JCS(link-bundle), with the
+// identifier as associated data (§7.2 step 4).
+func SealLinkBundle(pub []byte, b LinkBundle) ([]byte, error) {
+	normalize(&b)
 	plain, err := wire.JCS(b)
 	if err != nil {
 		return nil, err
@@ -98,6 +195,9 @@ func OpenLinkBundle(priv hpke.PrivateKey, id string, data []byte) (*LinkBundle, 
 	}
 	var b LinkBundle
 	if err := wire.Unmarshal(plain, &b); err != nil {
+		return nil, err
+	}
+	if b.unsigned, err = bundleHash(plain); err != nil {
 		return nil, err
 	}
 	if b.ID != id {
@@ -433,6 +533,10 @@ func (c *Client) OpenLinkBundle(data []byte) (*LinkBundle, error) {
 	if err != nil {
 		return nil, err
 	}
+	// The bundle's signature, before anything in it is used (§7.2).
+	if err := CheckLinkBundle(b, c.chain, c.device.Key.Public(), priv.PublicKey().Bytes()); err != nil {
+		return nil, err
+	}
 	c.state.AccountKey = append([]byte{}, b.AccountKey...)
 	c.state.LinkKey = nil
 	return b, c.saveLocked()
@@ -683,6 +787,9 @@ func (c *Client) AddLinkedDevice(ctx context.Context, d NewDevice, name string, 
 		return nil
 	}
 	bundle.ID, bundle.AccountKey = c.ID(), c.AccountKey()
+	if err := c.SignLinkBundle(&bundle, d.Pub, d.HPKE); err != nil {
+		return err
+	}
 	data, err := SealLinkBundle(d.HPKE, bundle)
 	if err != nil {
 		return err

@@ -213,6 +213,9 @@ type state struct {
 	// Expected lists the chats a link bundle said this device would be
 	// added to (§7.2).
 	Expected []string `json:"expected,omitempty"`
+	// ExpectedMembers names the members of each expected chat, as the
+	// link bundle gave them, to check who adds this device (§7.1).
+	ExpectedMembers map[string][]string `json:"expected_members,omitempty"`
 	// Communities are the communities this identity is in, by community
 	// server name (§16).
 	Communities map[string]*Community `json:"communities,omitempty"`

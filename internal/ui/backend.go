@@ -544,6 +544,9 @@ type Typing struct {
 	On   bool
 }
 
+// Notice is something to tell the user that belongs to no chat.
+type Notice struct{ Text string }
+
 // SignedOut reports that the identity is no longer signed in on this device,
 // such as when another device removes it (§7.6).
 type SignedOut struct{ Reason string }
@@ -554,6 +557,7 @@ func (ChatRemoved) event()     {}
 func (MessageAdded) event()    {}
 func (MessageChanged) event()  {}
 func (SignedOut) event()       {}
+func (Notice) event()          {}
 func (Typing) event()          {}
 func (IdentityChanged) event() {}
 

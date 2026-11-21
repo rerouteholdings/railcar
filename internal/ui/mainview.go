@@ -696,6 +696,9 @@ func (m *mainView) handleEvent(a *App, e Event) tea.Cmd {
 		return m.mentionNotice(a, e.Message)
 	case CallChanged:
 		return m.callChanged(a, e.Bar)
+	case Notice:
+		m.notice = e.Text
+		return nil
 	case MessageChanged:
 		m.upsert(e.Message, true)
 		if e.Message.Chat == m.active {
