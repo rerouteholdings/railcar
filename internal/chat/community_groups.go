@@ -138,6 +138,11 @@ type cjudged struct {
 	added   []string
 	removed []string
 	head    []byte
+	// backward is set for a commit that named an earlier community chain
+	// entry, in a members group that doesn't require members_rules yet,
+	// so it's taken with a line (§16.2).
+	backward bool
+	committer string
 }
 
 // judgeCommunityCommit judges a commit to a community group by the chain
@@ -169,6 +174,11 @@ func (e *Engine) judgeCommunityCommit(ctx context.Context, cm *Community, g *CGr
 	oldHead, hadHead := communityHead(before.Extensions)
 	head, hasHead := communityHead(p.Commit.Extensions)
 	j := &cjudged{head: head}
+	// members_rules switches on the rules tied to it (§16.2, §16.6).
+	gated := members && requires(before.Extensions, ExtMembersRules)
+	if gated && !requires(p.Commit.Extensions, ExtMembersRules) {
+		return bad("the commit drops members_rules from the members group's required capabilities")
+	}
 	var st *community.State
 	var headSeq uint64
 	switch {
@@ -185,10 +195,15 @@ func (e *Engine) judgeCommunityCommit(ctx context.Context, cm *Community, g *CGr
 			}
 			return bad("%v", err)
 		}
-		if !members && hadHead {
-			// A pinned group's head never goes back (§16.5).
+		if hadHead {
+			// The head never goes back: in a pinned group always (§16.5),
+			// in the members group once it requires members_rules, and
+			// before that it's taken with a line (§16.2).
 			if _, oldSeq, err := e.stateAtHead(ctx, cm, oldHead); err == nil && headSeq < oldSeq {
-				return bad("the commit names an earlier community chain entry than the group did")
+				if !members || gated {
+					return bad("the commit names an earlier community chain entry than the group did")
+				}
+				j.backward = true
 			}
 		}
 	default:
@@ -221,6 +236,7 @@ func (e *Engine) judgeCommunityCommit(ctx context.Context, cm *Community, g *CGr
 		committer, j.joiner = id, id
 	} else if p.Sender.Kind == "member" {
 		committer = leafID[p.Sender.Index]
+		j.committer = committer
 		if committer == "" {
 			return bad("a commit from outside the group")
 		}
@@ -300,7 +316,13 @@ func (e *Engine) judgeCommunityCommit(ctx context.Context, cm *Community, g *CGr
 		}
 		code, ok := st.FindCode(key)
 		hash := fmt.Sprintf("%x", community.CodeHash(key))
-		if !ok || !st.CodeLive(key, receiptTS, cm.Uses[hash]) {
+		// Under members_rules, the use limit isn't part of the verdict,
+		// since members count uses differently (§16.6, rule 3).
+		uses := cm.Uses[hash]
+		if gated {
+			uses = 0
+		}
+		if !ok || !st.CodeLive(key, receiptTS, uses) {
 			return bad("a code join with a code that isn't live")
 		}
 		if !beforeIDs[code.Creator] {
@@ -312,6 +334,24 @@ func (e *Engine) judgeCommunityCommit(ctx context.Context, cm *Community, g *CGr
 		for _, r := range removals {
 			if r.id != j.joiner {
 				return bad("a code join that removes someone else")
+			}
+		}
+		if gated {
+			// Rule 7: only Removes of the joiner's own device's old
+			// leaves, no other proposal, and tieroute_group as it was.
+			_, newDev, _ := parseCredential(p.Commit.PathLeaf.Identity)
+			for _, r := range removals {
+				if !bytes.Equal(r.dev, newDev) {
+					return bad("a code join that removes a leaf of another device")
+				}
+			}
+			for _, pr := range p.Commit.Proposals {
+				if pr.Kind != "remove" && pr.Kind != "external_init" {
+					return bad("a code join with a %s proposal", pr.Kind)
+				}
+			}
+			if old, _ := before.Extension(ExtGroup); !bytes.Equal(old, data) {
+				return bad("a code join that changes tieroute_group")
 			}
 		}
 		if cm.Uses == nil {
@@ -517,6 +557,11 @@ func (e *Engine) cprocessCommit(ctx context.Context, cm *Community, g *CGroup, b
 		delete(cm.Groups, g.ID)
 		e.dev.mls.Group(gid).Delete()
 		e.dev.Save()
+	}
+	if j.backward {
+		if ch := e.firstChannel(cm); ch != nil {
+			e.systemLine(ch, "A change named an earlier community chain entry, committed by "+e.nameOf(j.committer))
+		}
 	}
 	if j.joiner != "" && j.joiner != e.c.ID() {
 		e.newcomer(cm, after, j.joiner)
@@ -739,6 +784,11 @@ func (e *Engine) ccommit(ctx context.Context, cm *Community, g *CGroup, o ccommi
 		if o.required != nil {
 			req = o.required
 		}
+		if g.See == nil && (requires(st.Extensions, ExtMembersRules) || allList(st, ExtMembersRules)) {
+			// members_rules goes on once every leaf lists it, and never
+			// comes off (§16.2).
+			req = append(slices.DeleteFunc(slices.Clone(req), func(t uint16) bool { return t == ExtMembersRules }), ExtMembersRules)
+		}
 		opts.Extensions = []mls.Extension{x, mls.RequiredCapabilities(req, nil, nil)}
 		if hasHead {
 			opts.Extensions = append(opts.Extensions, mls.Extension{Type: ExtCommunityHead, Data: head})
@@ -863,4 +913,14 @@ func (e *Engine) bindHead(ctx context.Context, cm *Community) error {
 func (e *Engine) hasPending(g *CGroup) bool {
 	st, err := e.dev.mls.Group(mustB64(g.ID)).State()
 	return err == nil && len(st.PendingProposals) > 0
+}
+
+// allList reports whether every leaf in a group lists a capability.
+func allList(st *mls.State, t uint16) bool {
+	for _, m := range st.Members {
+		if !slices.Contains(m.Capabilities.Extensions, t) {
+			return false
+		}
+	}
+	return len(st.Members) > 0
 }

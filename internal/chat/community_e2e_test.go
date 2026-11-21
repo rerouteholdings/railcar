@@ -390,4 +390,18 @@ func TestE2ERailcarCommunities(t *testing.T) {
 		t.Fatal(err)
 	}
 	until(t, "ravi gets the message after typing", func() bool { return slices.Contains(ravi.bodies(gen.ID), "9:after typing") })
+
+	// Every leaf lists members_rules, so the members group requires it
+	// after the owner's next entry, and members keep it (§16.2).
+	if _, err := kat.e.AddChannel(ctx, "c.test", "later", "", ChannelOptions{}); err != nil {
+		t.Fatal(err)
+	}
+	all()
+	for _, r := range []*railcar{kat, ravi} {
+		cm := r.e.st.Communities["c.test"]
+		st, err := r.e.dev.mls.Group(mustB64(cm.MembersGroup)).State()
+		if err != nil || !requires(st.Extensions, ExtMembersRules) {
+			t.Errorf("the members group doesn't require members_rules: %v", err)
+		}
+	}
 }

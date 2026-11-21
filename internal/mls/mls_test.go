@@ -447,3 +447,15 @@ func TestSetConfig(t *testing.T) {
 		t.Error("set the configuration of a group that isn't there")
 	}
 }
+
+// TestRequiredExtensions reads back what RequiredCapabilities writes.
+func TestRequiredExtensions(t *testing.T) {
+	want := []uint16{0xF0A1, 0xF0A3, 0xF0A5}
+	got := RequiredExtensions(RequiredCapabilities(want, nil, nil).Data)
+	if len(got) != 3 || got[0] != want[0] || got[2] != want[2] {
+		t.Fatalf("got %x", got)
+	}
+	if RequiredExtensions([]byte{0x05}) != nil {
+		t.Error("an odd length parsed")
+	}
+}

@@ -359,6 +359,36 @@ func RequiredCapabilities(extensions, proposals, credentials []uint16) Extension
 	return Extension{Type: ExtRequiredCapabilities, Data: data}
 }
 
+// RequiredExtensions reads the extension types a required_capabilities
+// extension's data lists (RFC 9420 §7.2), or nil if it doesn't parse.
+func RequiredExtensions(data []byte) []uint16 {
+	n, rest, ok := readVarint(data)
+	if !ok || n%2 != 0 || uint64(len(rest)) < n {
+		return nil
+	}
+	out := make([]uint16, 0, n/2)
+	for i := uint64(0); i < n; i += 2 {
+		out = append(out, uint16(rest[i])<<8|uint16(rest[i+1]))
+	}
+	return out
+}
+
+// readVarint reads an MLS variable-length integer (RFC 9420 §2.1.2).
+func readVarint(b []byte) (uint64, []byte, bool) {
+	if len(b) == 0 {
+		return 0, nil, false
+	}
+	n := 1 << (b[0] >> 6)
+	if n > 4 || len(b) < n {
+		return 0, nil, false
+	}
+	v := uint64(b[0] & 0x3f)
+	for _, x := range b[1:n] {
+		v = v<<8 | uint64(x)
+	}
+	return v, b[n:], true
+}
+
 // appendVarint appends an MLS variable-length integer (RFC 9420 §2.1.2).
 func appendVarint(b []byte, n uint64) []byte {
 	switch {

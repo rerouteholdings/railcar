@@ -25,7 +25,19 @@ import (
 const (
 	ExtCommunityHead  uint16 = 0xF0A3 // community_head, a GroupContext extension
 	ExtRestrictedHead uint16 = 0xF0A4 // restricted_head, a capability only
+	ExtMembersRules   uint16 = 0xF0A5 // members_rules, a capability only (§16.2)
 )
+
+// requires reports whether a group's extensions require a capability in
+// required_capabilities.
+func requires(exts []mls.Extension, t uint16) bool {
+	for _, x := range exts {
+		if x.Type == mls.ExtRequiredCapabilities {
+			return slices.Contains(mls.RequiredExtensions(x.Data), t)
+		}
+	}
+	return false
+}
 
 // KindChannel is the chat kind of a community text or voice channel, as
 // this device lists it beside direct chats and group chats.
@@ -79,6 +91,9 @@ type Community struct {
 	// Linking is set on a newly linked device until another device of
 	// this identity adds it to the members group (§7.2 step 5).
 	Linking bool `json:"linking,omitempty"`
+	// MembersRulesKPs is set once this device's key packages at the
+	// community server list 0xF0A5 (§16.2).
+	MembersRulesKPs bool `json:"members_rules_kps,omitempty"`
 }
 
 // CGroup is one of a community's MLS groups.
@@ -651,7 +666,7 @@ func (e *Engine) catchUpCommunity(ctx context.Context, cm *Community) {
 // (§16.2, §16.5).
 func (d *Device) communityLeaf() mls.Leaf {
 	l := d.Leaf()
-	l.Capabilities.Extensions = append(l.Capabilities.Extensions, ExtCommunityHead, ExtRestrictedHead)
+	l.Capabilities.Extensions = append(l.Capabilities.Extensions, ExtCommunityHead, ExtRestrictedHead, ExtMembersRules)
 	return l
 }
 
@@ -686,6 +701,15 @@ func (e *Engine) topUpCommunity(ctx context.Context, cm *Community) error {
 	n, lastResort, err := conn.KeyPackageCount(ctx)
 	if err != nil {
 		return err
+	}
+	if !cm.MembersRulesKPs {
+		// Key packages from before members_rules don't list 0xF0A5:
+		// replace them all once (§16.2).
+		if _, err := conn.UploadKeyPackages(ctx, communityMaker{e.dev}, communityKeyPackages, client.UploadOptions{LastResort: true, Replace: true}); err != nil {
+			return err
+		}
+		cm.MembersRulesKPs = true
+		return e.save()
 	}
 	if n >= communityKeyPackages/2 && lastResort {
 		return nil
